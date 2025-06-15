@@ -65,6 +65,16 @@ enum HeroClass: String, CaseIterable, Codable {
         }
     }
     
+    var gradientColors: [Color] {
+        switch self {
+        case .warrior: return [WQDesignSystem.Colors.questRed, WQDesignSystem.Colors.questRed.opacity(0.7)]
+        case .mage: return [WQDesignSystem.Colors.questBlue, WQDesignSystem.Colors.questBlue.opacity(0.7)]
+        case .rogue: return [WQDesignSystem.Colors.secondaryText, WQDesignSystem.Colors.secondaryText.opacity(0.7)]
+        case .ranger: return [WQDesignSystem.Colors.questGreen, WQDesignSystem.Colors.questGreen.opacity(0.7)]
+        case .cleric: return [WQDesignSystem.Colors.questGold, WQDesignSystem.Colors.questGold.opacity(0.7)]
+        }
+    }
+    
     var shortDescription: String {
         switch self {
         case .warrior: return "Strong and resilient fighter"
@@ -97,6 +107,21 @@ enum HeroClass: String, CaseIterable, Codable {
         case .rogue: return "Shadowstep - Skip one encounter per quest"
         case .ranger: return "Hawk Vision - Preview next three encounters"
         case .cleric: return "Divine Light - Remove all negative effects"
+        }
+    }
+    
+    var loreBackground: String {
+        switch self {
+        case .warrior:
+            return "Born from the ancient order of the Iron Guard, warriors have protected the realm for centuries. Their strength comes from within, fueled by determination and the will to never surrender."
+        case .mage:
+            return "Students of the Arcane Academy, mages channel the raw energies of creation itself. They see beyond the veil of reality, manipulating the very fabric of the world through pure will."
+        case .rogue:
+            return "Shadow dancers from the Thieves' Guild, rogues move unseen through the world. They are the whispered rumors in taverns, the figures that vanish when you turn your head."
+        case .ranger:
+            return "Guardians of the Emerald Woods, rangers are one with nature's rhythm. They speak the language of wind and leaf, finding strength in the wild places others fear to tread."
+        case .cleric:
+            return "Chosen of the Divine Light, clerics serve as bridges between mortal and celestial realms. Their faith burns bright, healing wounds and banishing darkness wherever they walk."
         }
     }
 }
