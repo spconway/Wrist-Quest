@@ -1,40 +1,84 @@
 import SwiftUI
 
+enum OnboardingStep: String, CaseIterable {
+    case welcome
+    case healthPermission
+    case characterCreation
+    case tutorialQuest
+    case complete
+    
+    var title: String {
+        switch self {
+        case .welcome:
+            return "Welcome to Wrist Quest"
+        case .healthPermission:
+            return "Health Integration"
+        case .characterCreation:
+            return "Choose Your Hero"
+        case .tutorialQuest:
+            return "Your First Quest"
+        case .complete:
+            return "Ready to Adventure"
+        }
+    }
+    
+    var description: String {
+        switch self {
+        case .welcome:
+            return "Turn your daily activity into epic adventures"
+        case .healthPermission:
+            return "Grant health access to power your quests"
+        case .characterCreation:
+            return "Select your character class and abilities"
+        case .tutorialQuest:
+            return "Learn the basics with a guided quest"
+        case .complete:
+            return "Your journey begins now"
+        }
+    }
+}
+
 struct OnboardingView: View {
     @EnvironmentObject private var gameViewModel: GameViewModel
     @EnvironmentObject private var navigationCoordinator: NavigationCoordinator
-    @State private var onboardingViewModel: OnboardingViewModel?
+    @State private var currentStep: OnboardingStep = .welcome
+    @State private var selectedClass: HeroClass?
+    @State private var playerName = ""
+    @State private var healthPermissionStatus: HealthAuthorizationStatus = .notDetermined
+    @State private var isRequestingPermission = false
+    @State private var showingError = false
+    @State private var errorMessage = ""
+    
+    private let healthService: HealthServiceProtocol = HealthService()
     
     var body: some View {
         ZStack {
             WQDesignSystem.Colors.primaryBackground
                 .ignoresSafeArea(.all)
             
-            if let onboardingViewModel = onboardingViewModel {
-                TabView(selection: .constant(onboardingViewModel.currentStep)) {
-                    ForEach(OnboardingViewModel.OnboardingStep.allCases, id: \.self) { step in
-                        onboardingStepView(for: step)
-                            .tag(step)
-                            .environmentObject(onboardingViewModel)
-                    }
+            TabView(selection: .constant(currentStep)) {
+                ForEach(OnboardingStep.allCases, id: \.self) { step in
+                    onboardingStepView(for: step)
+                        .tag(step)
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                .animation(WQDesignSystem.Animation.medium, value: onboardingViewModel.currentStep)
-                .alert("Error", isPresented: .constant(onboardingViewModel.showingError)) {
-                    Button("OK") {
-                        onboardingViewModel.dismissError()
-                    }
-                } message: {
-                    Text(onboardingViewModel.errorMessage)
-                }
-            } else {
-                WQLoadingView("Setting up...")
             }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            .animation(WQDesignSystem.Animation.medium, value: currentStep)
+        }
+        .alert("Error", isPresented: $showingError) {
+            Button("OK") {
+                dismissError()
+            }
+        } message: {
+            Text(errorMessage)
         }
         .onAppear {
-            if onboardingViewModel == nil {
-                onboardingViewModel = OnboardingViewModel(gameViewModel: gameViewModel)
-            }
+            print("🎮 OnboardingView: onAppear called")
+            print("🎮 OnboardingView: Current step: \(currentStep.rawValue)")
+            checkHealthPermissionStatus()
+        }
+        .onChange(of: currentStep) { newValue in
+            print("🎮 OnboardingView: currentStep changed to \(newValue.rawValue)")
         }
         .onReceive(gameViewModel.$gameState) { gameState in
             if case .mainMenu = gameState {
@@ -44,10 +88,10 @@ struct OnboardingView: View {
     }
     
     @ViewBuilder
-    private func onboardingStepView(for step: OnboardingViewModel.OnboardingStep) -> some View {
+    private func onboardingStepView(for step: OnboardingStep) -> some View {
         switch step {
         case .welcome:
-            WelcomeStepView()
+            WelcomeStepView(onNext: nextStep)
         case .healthPermission:
             HealthPermissionStepView()
         case .characterCreation:
@@ -58,195 +102,163 @@ struct OnboardingView: View {
             CompletionStepView()
         }
     }
+    
+    // MARK: - Helper Methods
+    
+    var canProceed: Bool {
+        switch currentStep {
+        case .welcome:
+            return true
+        case .healthPermission:
+            return healthPermissionStatus == .authorized
+        case .characterCreation:
+            return selectedClass != nil && !playerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .tutorialQuest:
+            return true
+        case .complete:
+            return true
+        }
+    }
+    
+    func nextStep() {
+        print("🎮 OnboardingView: nextStep() called")
+        print("🎮 OnboardingView: currentStep = \(currentStep)")
+        print("🎮 OnboardingView: canProceed = \(canProceed)")
+        
+        guard canProceed else { 
+            print("🎮 OnboardingView: Cannot proceed, returning early")
+            return 
+        }
+        
+        let oldStep = currentStep
+        
+        switch currentStep {
+        case .welcome:
+            print("🎮 OnboardingView: Moving from welcome to healthPermission")
+            currentStep = .healthPermission
+        case .healthPermission:
+            print("🎮 OnboardingView: Moving from healthPermission to characterCreation")
+            currentStep = .characterCreation
+        case .characterCreation:
+            print("🎮 OnboardingView: Moving from characterCreation to tutorialQuest")
+            currentStep = .tutorialQuest
+        case .tutorialQuest:
+            print("🎮 OnboardingView: Moving from tutorialQuest to complete")
+            currentStep = .complete
+        case .complete:
+            print("🎮 OnboardingView: Completing onboarding")
+            completeOnboarding()
+        }
+        
+        print("🎮 OnboardingView: Step changed from \(oldStep) to \(currentStep)")
+    }
+    
+    func previousStep() {
+        switch currentStep {
+        case .welcome:
+            break
+        case .healthPermission:
+            currentStep = .welcome
+        case .characterCreation:
+            currentStep = .healthPermission
+        case .tutorialQuest:
+            currentStep = .characterCreation
+        case .complete:
+            currentStep = .tutorialQuest
+        }
+    }
+    
+    func requestHealthPermission() {
+        isRequestingPermission = true
+        
+        Task {
+            do {
+                try await healthService.requestAuthorization()
+                await checkHealthPermissionStatus()
+            } catch {
+                await MainActor.run {
+                    self.showError("Failed to request health permissions: \(error.localizedDescription)")
+                }
+            }
+            
+            await MainActor.run {
+                self.isRequestingPermission = false
+            }
+        }
+    }
+    
+    func selectClass(_ heroClass: HeroClass) {
+        selectedClass = heroClass
+    }
+    
+    func updatePlayerName(_ name: String) {
+        playerName = name
+    }
+    
+    private func checkHealthPermissionStatus() {
+        Task {
+            let status = await healthService.checkAuthorizationStatus()
+            await MainActor.run {
+                self.healthPermissionStatus = status
+            }
+        }
+    }
+    
+    private func completeOnboarding() {
+        guard let selectedClass = selectedClass else { return }
+        
+        let player = Player(
+            name: playerName.trimmingCharacters(in: .whitespacesAndNewlines),
+            activeClass: selectedClass
+        )
+        
+        gameViewModel.startGame(with: player)
+    }
+    
+    private func showError(_ message: String) {
+        errorMessage = message
+        showingError = true
+    }
+    
+    func dismissError() {
+        showingError = false
+        errorMessage = ""
+    }
 }
 
 struct WelcomeStepView: View {
-    @EnvironmentObject private var onboardingViewModel: OnboardingViewModel
-    
-    var body: some View {
-        VStack(spacing: WQDesignSystem.Spacing.lg) {
-            Spacer()
-            
-            VStack(spacing: WQDesignSystem.Spacing.md) {
-                Image(systemName: "applewatch")
-                    .font(.largeTitle)
-                    .foregroundColor(WQDesignSystem.Colors.accent)
-                    .scaleEffect(1.5)
-                
-                Text("Wrist Quest")
-                    .font(WQDesignSystem.Typography.largeTitle)
-                    .foregroundColor(WQDesignSystem.Colors.primaryText)
-                
-                Text("Turn your daily activity into epic adventures")
-                    .font(WQDesignSystem.Typography.body)
-                    .foregroundColor(WQDesignSystem.Colors.secondaryText)
-                    .multilineTextAlignment(.center)
-            }
-            
-            Spacer()
-            
-            VStack(spacing: WQDesignSystem.Spacing.sm) {
-                FeatureRow(icon: "figure.walk", title: "Steps become travel", description: "Every step moves you forward on quests")
-                FeatureRow(icon: "heart.fill", title: "Heart rate triggers combat", description: "High activity unlocks battle encounters")
-                FeatureRow(icon: "trophy.fill", title: "Real rewards", description: "Earn XP, gold, and loot for activity")
-            }
-            
-            Spacer()
-            
-            WQButton("Get Started", icon: "arrow.right") {
-                onboardingViewModel.nextStep()
-            }
-            .padding(.horizontal, WQDesignSystem.Spacing.md)
-        }
-        .padding(WQDesignSystem.Spacing.lg)
-    }
-}
-
-struct HealthPermissionStepView: View {
-    @EnvironmentObject private var onboardingViewModel: OnboardingViewModel
-    
-    var body: some View {
-        VStack(spacing: WQDesignSystem.Spacing.lg) {
-            VStack(spacing: WQDesignSystem.Spacing.md) {
-                Image(systemName: "heart.text.square")
-                    .font(.largeTitle)
-                    .foregroundColor(WQDesignSystem.Colors.success)
-                
-                Text("Health Integration")
-                    .font(WQDesignSystem.Typography.title)
-                    .foregroundColor(WQDesignSystem.Colors.primaryText)
-                
-                Text("Wrist Quest uses your health data to power your adventure")
-                    .font(WQDesignSystem.Typography.body)
-                    .foregroundColor(WQDesignSystem.Colors.secondaryText)
-                    .multilineTextAlignment(.center)
-            }
-            
-            VStack(spacing: WQDesignSystem.Spacing.md) {
-                HealthDataRow(type: "Steps", icon: "figure.walk", purpose: "Travel distance on quests")
-                HealthDataRow(type: "Heart Rate", icon: "heart.fill", purpose: "Trigger combat encounters")
-                HealthDataRow(type: "Stand Hours", icon: "figure.stand", purpose: "Bonus XP multipliers")
-                HealthDataRow(type: "Exercise", icon: "flame.fill", purpose: "Crafting materials")
-            }
-            
-            Spacer()
-            
-            VStack(spacing: WQDesignSystem.Spacing.sm) {
-                if onboardingViewModel.healthPermissionStatus == .authorized {
-                    HStack {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(WQDesignSystem.Colors.success)
-                        Text("Health access granted")
-                            .font(WQDesignSystem.Typography.body)
-                            .foregroundColor(WQDesignSystem.Colors.success)
-                    }
-                    
-                    WQButton("Continue", icon: "arrow.right") {
-                        onboardingViewModel.nextStep()
-                    }
-                } else {
-                    WQButton("Grant Health Access", icon: "heart.fill") {
-                        onboardingViewModel.requestHealthPermission()
-                    }
-                    .disabled(onboardingViewModel.isRequestingPermission)
-                    
-                    if onboardingViewModel.isRequestingPermission {
-                        HStack {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                            Text("Requesting permissions...")
-                                .font(WQDesignSystem.Typography.caption)
-                                .foregroundColor(WQDesignSystem.Colors.secondaryText)
-                        }
-                    }
-                }
-                
-                WQButton("Back", style: .tertiary) {
-                    onboardingViewModel.previousStep()
-                }
-            }
-            .padding(.horizontal, WQDesignSystem.Spacing.md)
-        }
-        .padding(WQDesignSystem.Spacing.lg)
-    }
-}
-
-struct CharacterCreationStepView: View {
-    @EnvironmentObject private var onboardingViewModel: OnboardingViewModel
-    @State private var playerName = ""
+    let onNext: () -> Void
     
     var body: some View {
         ScrollView {
             VStack(spacing: WQDesignSystem.Spacing.lg) {
                 VStack(spacing: WQDesignSystem.Spacing.md) {
-                    Text("Choose Your Hero")
-                        .font(WQDesignSystem.Typography.title)
+                    Image(systemName: "applewatch")
+                        .font(.largeTitle)
+                        .foregroundColor(WQDesignSystem.Colors.accent)
+                        .scaleEffect(1.5)
+                    
+                    Text("Wrist Quest")
+                        .font(WQDesignSystem.Typography.largeTitle)
                         .foregroundColor(WQDesignSystem.Colors.primaryText)
                     
-                    Text("Select your character class and abilities")
+                    Text("Turn your daily activity into epic adventures")
                         .font(WQDesignSystem.Typography.body)
                         .foregroundColor(WQDesignSystem.Colors.secondaryText)
                         .multilineTextAlignment(.center)
                 }
                 
-                LazyVGrid(columns: [
-                    GridItem(.flexible()),
-                    GridItem(.flexible())
-                ], spacing: WQDesignSystem.Spacing.sm) {
-                    ForEach(HeroClass.allCases, id: \.self) { heroClass in
-                        WQHeroClassCard(
-                            heroClass: heroClass,
-                            isSelected: onboardingViewModel.selectedClass == heroClass
-                        ) {
-                            onboardingViewModel.selectClass(heroClass)
-                        }
-                    }
-                }
-                
-                if let selectedClass = onboardingViewModel.selectedClass {
-                    VStack(spacing: WQDesignSystem.Spacing.sm) {
-                        Text("Hero Name")
-                            .font(WQDesignSystem.Typography.headline)
-                            .foregroundColor(WQDesignSystem.Colors.primaryText)
-                        
-                        TextField("Enter your name", text: $playerName)
-                            .onChange(of: playerName) { newValue in
-                                onboardingViewModel.updatePlayerName(newValue)
-                            }
-                    }
-                    
-                    WQCard {
-                        VStack(alignment: .leading, spacing: WQDesignSystem.Spacing.xs) {
-                            Text("\(selectedClass.displayName) Abilities")
-                                .font(WQDesignSystem.Typography.headline)
-                                .foregroundColor(WQDesignSystem.Colors.primaryText)
-                            
-                            Text("Passive: \(selectedClass.passivePerk)")
-                                .font(WQDesignSystem.Typography.caption)
-                                .foregroundColor(WQDesignSystem.Colors.secondaryText)
-                            
-                            Text("Active: \(selectedClass.activeAbility)")
-                                .font(WQDesignSystem.Typography.caption)
-                                .foregroundColor(WQDesignSystem.Colors.secondaryText)
-                            
-                            Text("Trait: \(selectedClass.specialTrait)")
-                                .font(WQDesignSystem.Typography.caption)
-                                .foregroundColor(WQDesignSystem.Colors.secondaryText)
-                        }
-                    }
+                VStack(spacing: WQDesignSystem.Spacing.sm) {
+                    FeatureRow(icon: "figure.walk", title: "Steps become travel", description: "Every step moves you forward on quests")
+                    FeatureRow(icon: "heart.fill", title: "Heart rate triggers combat", description: "High activity unlocks battle encounters")
+                    FeatureRow(icon: "trophy.fill", title: "Real rewards", description: "Earn XP, gold, and loot for activity")
                 }
                 
                 Spacer(minLength: WQDesignSystem.Spacing.lg)
                 
-                VStack(spacing: WQDesignSystem.Spacing.sm) {
-                    WQButton("Continue", icon: "arrow.right") {
-                        onboardingViewModel.nextStep()
-                    }
-                    .disabled(!onboardingViewModel.canProceed)
-                    
-                    WQButton("Back", style: .tertiary) {
-                        onboardingViewModel.previousStep()
-                    }
+                WQButton("Get Started", icon: "arrow.right") {
+                    print("🎮 WelcomeStepView: Button tapped!")
+                    onNext()
                 }
                 .padding(.horizontal, WQDesignSystem.Spacing.md)
             }
@@ -255,188 +267,27 @@ struct CharacterCreationStepView: View {
     }
 }
 
-struct TutorialQuestStepView: View {
-    @EnvironmentObject private var onboardingViewModel: OnboardingViewModel
-    @State private var tutorialProgress: Double = 0
-    @State private var showingEncounter = false
-    
+struct HealthPermissionStepView: View {
     var body: some View {
-        VStack(spacing: WQDesignSystem.Spacing.lg) {
-            VStack(spacing: WQDesignSystem.Spacing.md) {
-                Text("Your First Quest")
-                    .font(WQDesignSystem.Typography.title)
-                    .foregroundColor(WQDesignSystem.Colors.primaryText)
-                
-                Text("Learn the basics with a practice adventure")
-                    .font(WQDesignSystem.Typography.body)
-                    .foregroundColor(WQDesignSystem.Colors.secondaryText)
-                    .multilineTextAlignment(.center)
-            }
-            
-            WQCard {
-                VStack(spacing: WQDesignSystem.Spacing.md) {
-                    Text("Tutorial: Village Outskirts")
-                        .font(WQDesignSystem.Typography.headline)
-                        .foregroundColor(WQDesignSystem.Colors.primaryText)
-                    
-                    HStack {
-                        Image(systemName: onboardingViewModel.selectedClass?.iconName ?? "person.fill")
-                            .font(.title2)
-                            .foregroundColor(.white)
-                            .frame(width: 30, height: 30)
-                            .background(
-                                LinearGradient(
-                                    colors: onboardingViewModel.selectedClass?.gradientColors ?? [.blue, .purple],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .cornerRadius(WQDesignSystem.CornerRadius.sm)
-                        
-                        VStack(alignment: .leading, spacing: WQDesignSystem.Spacing.xs) {
-                            Text("Progress: \(Int(tutorialProgress * 100))%")
-                                .font(WQDesignSystem.Typography.caption)
-                                .foregroundColor(WQDesignSystem.Colors.secondaryText)
-                            
-                            WQProgressBar(progress: tutorialProgress, height: 6)
-                        }
-                    }
-                    
-                    if tutorialProgress < 1.0 {
-                        Text("Walk around or shake your watch to simulate steps!")
-                            .font(WQDesignSystem.Typography.caption)
-                            .foregroundColor(WQDesignSystem.Colors.secondaryText)
-                            .multilineTextAlignment(.center)
-                    } else {
-                        Text("Quest Complete! +50 XP, +10 Gold")
-                            .font(WQDesignSystem.Typography.caption)
-                            .foregroundColor(WQDesignSystem.Colors.success)
-                            .multilineTextAlignment(.center)
-                    }
-                }
-            }
-            
-            if tutorialProgress >= 0.5 && !showingEncounter {
-                WQCard {
-                    VStack(spacing: WQDesignSystem.Spacing.sm) {
-                        Text("Encounter Discovered!")
-                            .font(WQDesignSystem.Typography.headline)
-                            .foregroundColor(WQDesignSystem.Colors.primaryText)
-                        
-                        Text("You found a mysterious path in the forest...")
-                            .font(WQDesignSystem.Typography.caption)
-                            .foregroundColor(WQDesignSystem.Colors.secondaryText)
-                            .multilineTextAlignment(.center)
-                        
-                        WQButton("Investigate", icon: "magnifyingglass") {
-                            showingEncounter = true
-                        }
-                    }
-                }
-            }
-            
-            Spacer()
-            
-            VStack(spacing: WQDesignSystem.Spacing.sm) {
-                WQButton("Continue", icon: "arrow.right") {
-                    onboardingViewModel.nextStep()
-                }
-                .disabled(tutorialProgress < 1.0)
-                
-                WQButton("Skip Tutorial", style: .tertiary) {
-                    onboardingViewModel.nextStep()
-                }
-            }
-            .padding(.horizontal, WQDesignSystem.Spacing.md)
-        }
-        .padding(WQDesignSystem.Spacing.lg)
-        .onAppear {
-            startTutorialProgress()
-        }
-        .sheet(isPresented: $showingEncounter) {
-            TutorialEncounterView()
-        }
+        Text("Health Permission Step")
     }
-    
-    private func startTutorialProgress() {
-        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
-            if tutorialProgress < 1.0 {
-                tutorialProgress += 0.1
-            } else {
-                timer.invalidate()
-            }
-        }
+}
+
+struct CharacterCreationStepView: View {
+    var body: some View {
+        Text("Character Creation Step")
+    }
+}
+
+struct TutorialQuestStepView: View {
+    var body: some View {
+        Text("Tutorial Quest Step")
     }
 }
 
 struct CompletionStepView: View {
-    @EnvironmentObject private var onboardingViewModel: OnboardingViewModel
-    
     var body: some View {
-        VStack(spacing: WQDesignSystem.Spacing.lg) {
-            Spacer()
-            
-            VStack(spacing: WQDesignSystem.Spacing.md) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.largeTitle)
-                    .foregroundColor(WQDesignSystem.Colors.success)
-                    .scaleEffect(1.5)
-                
-                Text("Ready to Adventure!")
-                    .font(WQDesignSystem.Typography.title)
-                    .foregroundColor(WQDesignSystem.Colors.primaryText)
-                
-                Text("Your hero is ready to begin their journey")
-                    .font(WQDesignSystem.Typography.body)
-                    .foregroundColor(WQDesignSystem.Colors.secondaryText)
-                    .multilineTextAlignment(.center)
-            }
-            
-            if let selectedClass = onboardingViewModel.selectedClass {
-                WQCard {
-                    VStack(spacing: WQDesignSystem.Spacing.sm) {
-                        HStack {
-                            Image(systemName: selectedClass.iconName)
-                                .font(.title)
-                                .foregroundColor(.white)
-                                .frame(width: 40, height: 40)
-                                .background(
-                                    LinearGradient(
-                                        colors: selectedClass.gradientColors,
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .cornerRadius(WQDesignSystem.CornerRadius.md)
-                            
-                            VStack(alignment: .leading, spacing: WQDesignSystem.Spacing.xs) {
-                                Text(onboardingViewModel.playerName.isEmpty ? "Hero" : onboardingViewModel.playerName)
-                                    .font(WQDesignSystem.Typography.headline)
-                                    .foregroundColor(WQDesignSystem.Colors.primaryText)
-                                
-                                Text(selectedClass.displayName)
-                                    .font(WQDesignSystem.Typography.caption)
-                                    .foregroundColor(WQDesignSystem.Colors.secondaryText)
-                            }
-                            
-                            Spacer()
-                        }
-                        
-                        Text("Level 1 • 0 XP • 0 Gold")
-                            .font(WQDesignSystem.Typography.caption)
-                            .foregroundColor(WQDesignSystem.Colors.secondaryText)
-                    }
-                }
-            }
-            
-            Spacer()
-            
-            WQButton("Start Adventure", icon: "play.fill") {
-                onboardingViewModel.nextStep()
-            }
-            .padding(.horizontal, WQDesignSystem.Spacing.md)
-        }
-        .padding(WQDesignSystem.Spacing.lg)
+        Text("Completion Step")
     }
 }
 
@@ -464,85 +315,5 @@ struct FeatureRow: View {
             
             Spacer()
         }
-    }
-}
-
-struct HealthDataRow: View {
-    let type: String
-    let icon: String
-    let purpose: String
-    
-    var body: some View {
-        HStack(spacing: WQDesignSystem.Spacing.sm) {
-            Image(systemName: icon)
-                .font(.caption)
-                .foregroundColor(WQDesignSystem.Colors.accent)
-                .frame(width: 20, height: 20)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(type)
-                    .font(WQDesignSystem.Typography.caption.weight(.medium))
-                    .foregroundColor(WQDesignSystem.Colors.primaryText)
-                
-                Text(purpose)
-                    .font(WQDesignSystem.Typography.footnote)
-                    .foregroundColor(WQDesignSystem.Colors.secondaryText)
-            }
-            
-            Spacer()
-        }
-    }
-}
-
-struct TutorialEncounterView: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var selectedOption: Int? = nil
-    @State private var showResult = false
-    
-    var body: some View {
-        VStack(spacing: WQDesignSystem.Spacing.lg) {
-            Text("Tutorial Encounter")
-                .font(WQDesignSystem.Typography.title)
-                .foregroundColor(WQDesignSystem.Colors.primaryText)
-            
-            Text("You find a fork in the road. A merchant sits by a campfire, looking worried.")
-                .font(WQDesignSystem.Typography.body)
-                .foregroundColor(WQDesignSystem.Colors.secondaryText)
-                .multilineTextAlignment(.center)
-            
-            if !showResult {
-                VStack(spacing: WQDesignSystem.Spacing.sm) {
-                    WQButton("Approach the merchant", style: .secondary) {
-                        selectedOption = 0
-                        showResult = true
-                    }
-                    
-                    WQButton("Take the other path", style: .secondary) {
-                        selectedOption = 1
-                        showResult = true
-                    }
-                }
-            } else {
-                WQCard {
-                    VStack(spacing: WQDesignSystem.Spacing.sm) {
-                        Text("Success!")
-                            .font(WQDesignSystem.Typography.headline)
-                            .foregroundColor(WQDesignSystem.Colors.success)
-                        
-                        Text(selectedOption == 0 ? 
-                             "The merchant gives you a healing potion! +1 Health Potion" :
-                             "You find a hidden chest! +15 Gold")
-                            .font(WQDesignSystem.Typography.caption)
-                            .foregroundColor(WQDesignSystem.Colors.secondaryText)
-                            .multilineTextAlignment(.center)
-                    }
-                }
-                
-                WQButton("Continue", icon: "arrow.right") {
-                    dismiss()
-                }
-            }
-        }
-        .padding(WQDesignSystem.Spacing.lg)
     }
 }

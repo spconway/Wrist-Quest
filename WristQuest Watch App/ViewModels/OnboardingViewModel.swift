@@ -12,7 +12,7 @@ class OnboardingViewModel: ObservableObject {
     @Published var errorMessage = ""
     
     private let healthService: HealthServiceProtocol
-    private let gameViewModel: GameViewModel
+    private var gameViewModel: GameViewModel
     
     enum OnboardingStep: CaseIterable {
         case welcome
@@ -81,20 +81,36 @@ class OnboardingViewModel: ObservableObject {
     }
     
     func nextStep() {
-        guard canProceed else { return }
+        print("🎮 OnboardingViewModel: nextStep() called")
+        print("🎮 OnboardingViewModel: currentStep = \(currentStep)")
+        print("🎮 OnboardingViewModel: canProceed = \(canProceed)")
+        
+        guard canProceed else { 
+            print("🎮 OnboardingViewModel: Cannot proceed, returning early")
+            return 
+        }
+        
+        let oldStep = currentStep
         
         switch currentStep {
         case .welcome:
+            print("🎮 OnboardingViewModel: Moving from welcome to healthPermission")
             currentStep = .healthPermission
         case .healthPermission:
+            print("🎮 OnboardingViewModel: Moving from healthPermission to characterCreation")
             currentStep = .characterCreation
         case .characterCreation:
+            print("🎮 OnboardingViewModel: Moving from characterCreation to tutorialQuest")
             currentStep = .tutorialQuest
         case .tutorialQuest:
+            print("🎮 OnboardingViewModel: Moving from tutorialQuest to complete")
             currentStep = .complete
         case .complete:
+            print("🎮 OnboardingViewModel: Completing onboarding")
             completeOnboarding()
         }
+        
+        print("🎮 OnboardingViewModel: Step changed from \(oldStep) to \(currentStep)")
     }
     
     func previousStep() {
@@ -167,5 +183,10 @@ class OnboardingViewModel: ObservableObject {
     func dismissError() {
         showingError = false
         errorMessage = ""
+    }
+    
+    func updateGameViewModel(_ newGameViewModel: GameViewModel) {
+        print("🎮 OnboardingViewModel: Updating gameViewModel")
+        gameViewModel = newGameViewModel
     }
 }

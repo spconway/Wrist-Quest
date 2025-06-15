@@ -20,6 +20,7 @@ struct WQDesignSystem {
         static let success = Color.green
         static let warning = Color.orange
         static let error = Color.red
+        static let border = Color(white: 0.3)
         
         // Additional colors for complications
         static let backgroundSecondary = secondaryBackground
@@ -120,7 +121,10 @@ struct WQButton: View {
     }
     
     var body: some View {
-        Button(action: action) {
+        Button(action: {
+            print("🎮 WQButton: Button '\(title)' tapped")
+            action()
+        }) {
             HStack(spacing: WQDesignSystem.Spacing.sm) {
                 if let icon = icon {
                     Image(systemName: icon)

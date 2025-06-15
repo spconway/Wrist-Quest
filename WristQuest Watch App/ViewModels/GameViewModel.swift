@@ -46,10 +46,13 @@ class GameViewModel: ObservableObject {
     
     init(persistenceService: PersistenceServiceProtocol = PersistenceService(),
          healthService: HealthServiceProtocol = HealthService()) {
+        print("🎮 GameViewModel: Initializing")
         self.persistenceService = persistenceService
         self.healthService = healthService
         
+        print("🎮 GameViewModel: Setting up subscriptions")
         setupSubscriptions()
+        print("🎮 GameViewModel: Starting load game state")
         loadGameState()
     }
     
@@ -63,22 +66,59 @@ class GameViewModel: ObservableObject {
     }
     
     private func loadGameState() {
+        print("🎮 GameViewModel: Starting loadGameState")
         isLoading = true
         
+        // Add a failsafe timeout to ensure we don't get stuck
         Task {
-            do {
-                if let savedPlayer = try await persistenceService.loadPlayer() {
-                    currentPlayer = savedPlayer
-                    gameState = .mainMenu
-                } else {
+            print("🎮 GameViewModel: Starting failsafe timeout (3 seconds)")
+            try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds
+            await MainActor.run {
+                print("🎮 GameViewModel: Failsafe timeout reached, isLoading: \(isLoading)")
+                if isLoading {
+                    print("🎮 GameViewModel: FAILSAFE TRIGGERED - Loading timeout, forcing onboarding")
+                    isLoading = false
                     gameState = .onboarding
+                    errorMessage = "Loading timed out - starting fresh"
+                    print("🎮 GameViewModel: After failsafe - isLoading: \(isLoading), gameState: \(gameState)")
+                } else {
+                    print("🎮 GameViewModel: Failsafe timeout reached but already not loading")
+                }
+            }
+        }
+        
+        Task {
+            print("🎮 GameViewModel: Inside async task")
+            do {
+                print("🎮 GameViewModel: Attempting to load player")
+                if let savedPlayer = try await persistenceService.loadPlayer() {
+                    print("🎮 GameViewModel: Found saved player: \(savedPlayer.name)")
+                    await MainActor.run {
+                        guard isLoading else { return } // Prevent race condition with failsafe
+                        currentPlayer = savedPlayer
+                        gameState = .mainMenu
+                        isLoading = false
+                        print("🎮 GameViewModel: Set state to mainMenu")
+                    }
+                } else {
+                    print("🎮 GameViewModel: No saved player found, going to onboarding")
+                    await MainActor.run {
+                        guard isLoading else { return } // Prevent race condition with failsafe
+                        gameState = .onboarding
+                        isLoading = false
+                        print("🎮 GameViewModel: Set state to onboarding")
+                    }
                 }
             } catch {
-                errorMessage = "Failed to load game: \(error.localizedDescription)"
-                gameState = .onboarding
+                print("🎮 GameViewModel: Error loading player: \(error)")
+                await MainActor.run {
+                    guard isLoading else { return } // Prevent race condition with failsafe
+                    errorMessage = "Failed to load game: \(error.localizedDescription)"
+                    gameState = .onboarding
+                    isLoading = false
+                    print("🎮 GameViewModel: Set state to onboarding due to error")
+                }
             }
-            
-            isLoading = false
         }
     }
     

@@ -16,10 +16,6 @@ struct WristQuest_Watch_AppApp: App {
     @StateObject private var healthViewModel = HealthViewModel()
     @StateObject private var backgroundTaskManager = BackgroundTaskManager()
     
-    private var gameStateManager: GameStateManager {
-        GameStateManager(navigationCoordinator: navigationCoordinator)
-    }
-    
     var body: some Scene {
         WindowGroup {
             AppRootView()
@@ -27,7 +23,6 @@ struct WristQuest_Watch_AppApp: App {
                 .environmentObject(gameViewModel)
                 .environmentObject(healthViewModel)
                 .environmentObject(backgroundTaskManager)
-                .environmentObject(gameStateManager)
                 .onAppear {
                     setupApp()
                 }

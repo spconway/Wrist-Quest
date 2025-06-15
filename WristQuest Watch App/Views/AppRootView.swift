@@ -3,7 +3,6 @@ import SwiftUI
 struct AppRootView: View {
     @EnvironmentObject var navigationCoordinator: NavigationCoordinator
     @EnvironmentObject var gameViewModel: GameViewModel
-    @EnvironmentObject var gameStateManager: GameStateManager
     
     var body: some View {
         NavigationStack(path: $navigationCoordinator.navigationPath) {
@@ -27,28 +26,50 @@ struct AppRootView: View {
                 Text(errorMessage)
             }
         }
-        .onOpenURL { url in
-            gameStateManager.handleDeepLink(url)
+        .onReceive(gameViewModel.$gameState) { gameState in
+            // Sync GameViewModel state with navigation
+            print("🎮 AppRootView: GameState changed to \(gameState), isLoading: \(gameViewModel.isLoading)")
+            switch gameState {
+            case .onboarding:
+                print("🎮 AppRootView: Presenting onboarding fullScreenCover")
+                navigationCoordinator.presentFullScreenCover(.onboarding)
+            case .mainMenu:
+                print("🎮 AppRootView: Dismissing fullScreenCover for mainMenu")
+                navigationCoordinator.dismissFullScreenCover()
+            default:
+                break
+            }
+        }
+        .onReceive(gameViewModel.$isLoading) { isLoading in
+            print("🎮 AppRootView: isLoading changed to \(isLoading)")
         }
     }
     
     @ViewBuilder
     private func destinationView(for destination: NavigationCoordinator.Destination) -> some View {
-        switch destination {
-        case .questDetail(let quest):
-            QuestDetailView(quest: quest)
-        case .activeQuest:
-            ActiveQuestView()
-        case .encounter(let encounter):
-            EncounterView(encounter: encounter)
-        case .characterDetail:
-            CharacterDetailView()
-        case .inventory:
-            InventoryView()
-        case .journal:
-            JournalView()
-        case .settings:
-            SettingsView()
+        if let player = gameViewModel.currentPlayer {
+            let playerViewModel = PlayerViewModel(player: player)
+            
+            switch destination {
+            case .questList:
+                QuestListView(playerViewModel: playerViewModel)
+            case .questDetail(let quest):
+                QuestDetailView(quest: quest, playerViewModel: playerViewModel)
+            case .activeQuest:
+                ActiveQuestView(playerViewModel: playerViewModel)
+            case .encounter(let encounter):
+                EncounterView(encounter: encounter)
+            case .characterDetail:
+                CharacterDetailView()
+            case .inventory:
+                InventoryView()
+            case .journal:
+                JournalView()
+            case .settings:
+                SettingsView()
+            }
+        } else {
+            WQLoadingView("Loading...")
         }
     }
     
@@ -81,20 +102,22 @@ struct MainContentView: View {
     @EnvironmentObject var gameViewModel: GameViewModel
     
     var body: some View {
-        Group {
-            if gameViewModel.isLoading {
-                LoadingView()
-            } else {
-                switch gameViewModel.gameState {
-                case .mainMenu:
-                    MainMenuView()
-                case .activeQuest(let quest):
-                    ActiveQuestView(quest: quest)
-                case .encounter(let encounter):
-                    EncounterView(encounter: encounter)
-                default:
+        if gameViewModel.isLoading {
+            LoadingView()
+        } else {
+            switch gameViewModel.gameState {
+            case .mainMenu:
+                MainMenuView()
+            case .activeQuest:
+                if let player = gameViewModel.currentPlayer {
+                    ActiveQuestView(playerViewModel: PlayerViewModel(player: player))
+                } else {
                     MainMenuView()
                 }
+            case .encounter(let encounter):
+                EncounterView(encounter: encounter)
+            default:
+                MainMenuView()
             }
         }
     }
@@ -117,52 +140,6 @@ struct ErrorView: View {
     }
 }
 
-struct QuestDetailView: View {
-    let quest: Quest
-    
-    var body: some View {
-        WQCard {
-            VStack(alignment: .leading, spacing: WQDesignSystem.Spacing.md) {
-                Text(quest.title)
-                    .font(WQDesignSystem.Typography.title)
-                    .foregroundColor(WQDesignSystem.Colors.primaryText)
-                
-                Text(quest.description)
-                    .font(WQDesignSystem.Typography.body)
-                    .foregroundColor(WQDesignSystem.Colors.secondaryText)
-                
-                HStack {
-                    WQStatDisplay(title: "Distance", value: "\(quest.totalDistance.formatted(decimalPlaces: 1)) mi", icon: "location.fill")
-                    Spacer()
-                    WQStatDisplay(title: "Reward", value: "\(quest.rewardXP) XP", icon: "star.fill")
-                }
-                
-                WQButton("Start Quest", icon: "play.fill") {
-                    // Quest start logic would go here
-                }
-            }
-        }
-        .padding()
-        .navigationTitle("Quest Details")
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
-struct ActiveQuestView: View {
-    let quest: Quest?
-    
-    init(quest: Quest? = nil) {
-        self.quest = quest
-    }
-    
-    var body: some View {
-        if let quest = quest {
-            Text("Active Quest: \(quest.title)")
-        } else {
-            Text("No Active Quest")
-        }
-    }
-}
 
 struct EncounterView: View {
     let encounter: Encounter

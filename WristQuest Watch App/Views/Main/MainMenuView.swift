@@ -5,6 +5,7 @@ struct MainMenuView: View {
     @EnvironmentObject private var playerViewModel: PlayerViewModel
     @EnvironmentObject private var healthViewModel: HealthViewModel
     @EnvironmentObject private var navigationCoordinator: NavigationCoordinator
+    @State private var questViewModel: QuestViewModel?
     
     var body: some View {
         ScrollView {
@@ -16,8 +17,10 @@ struct MainMenuView: View {
                     
                     QuickActionsView()
                     
-                    if let activeQuest = questViewModel?.activeQuest {
-                        ActiveQuestCardView(quest: activeQuest)
+                    if let questVM = questViewModel, let activeQuest = questVM.activeQuest {
+                        ActiveQuestCardView(quest: activeQuest) {
+                            navigationCoordinator.navigate(to: .activeQuest)
+                        }
                     } else {
                         QuestPromptView()
                     }
@@ -29,11 +32,11 @@ struct MainMenuView: View {
         }
         .navigationTitle("Wrist Quest")
         .navigationBarTitleDisplayMode(.inline)
-    }
-    
-    private var questViewModel: QuestViewModel? {
-        guard let player = gameViewModel.currentPlayer else { return nil }
-        return QuestViewModel(playerViewModel: PlayerViewModel(player: player))
+        .onAppear {
+            if let player = gameViewModel.currentPlayer, questViewModel == nil {
+                questViewModel = QuestViewModel(playerViewModel: PlayerViewModel(player: player))
+            }
+        }
     }
 }
 
@@ -246,7 +249,7 @@ struct QuickActionsView: View {
                 title: "Quests",
                 color: WQDesignSystem.Colors.questBlue
             ) {
-                // Navigate to quest list
+                navigationCoordinator.navigate(to: .questList)
             }
             
             QuickActionButton(
@@ -307,56 +310,66 @@ struct QuickActionButton: View {
 
 struct ActiveQuestCardView: View {
     let quest: Quest
+    let onTap: () -> Void
     
     var body: some View {
-        WQCard {
-            VStack(alignment: .leading, spacing: WQDesignSystem.Spacing.sm) {
-                HStack {
-                    Text("Active Quest")
-                        .font(WQDesignSystem.Typography.caption)
-                        .foregroundColor(WQDesignSystem.Colors.secondaryText)
-                    
-                    Spacer()
-                    
-                    Text("\(Int(quest.progressPercentage * 100))%")
-                        .font(WQDesignSystem.Typography.caption)
-                        .foregroundColor(WQDesignSystem.Colors.accent)
-                }
-                
-                Text(quest.title)
-                    .font(WQDesignSystem.Typography.headline)
-                    .foregroundColor(WQDesignSystem.Colors.primaryText)
-                
-                Text(quest.description)
-                    .font(WQDesignSystem.Typography.caption)
-                    .foregroundColor(WQDesignSystem.Colors.secondaryText)
-                    .lineLimit(2)
-                
-                WQProgressBar(
-                    progress: quest.progressPercentage,
-                    color: WQDesignSystem.Colors.accent,
-                    height: 8
-                )
-                
-                HStack {
-                    Text("Distance: \(quest.currentProgress.formatted(decimalPlaces: 1)) / \(quest.totalDistance.formatted(decimalPlaces: 1)) miles")
-                        .font(WQDesignSystem.Typography.footnote)
-                        .foregroundColor(WQDesignSystem.Colors.secondaryText)
-                    
-                    Spacer()
-                    
-                    if quest.isCompleted {
-                        Text("Complete!")
+        Button(action: onTap) {
+            WQCard {
+                VStack(alignment: .leading, spacing: WQDesignSystem.Spacing.sm) {
+                    HStack {
+                        Text("Active Quest")
                             .font(WQDesignSystem.Typography.caption)
-                            .foregroundColor(WQDesignSystem.Colors.success)
+                            .foregroundColor(WQDesignSystem.Colors.secondaryText)
+                        
+                        Spacer()
+                        
+                        Text("\(Int(quest.progressPercentage * 100))%")
+                            .font(WQDesignSystem.Typography.caption)
+                            .foregroundColor(WQDesignSystem.Colors.accent)
+                        
+                        Image(systemName: "chevron.right")
+                            .foregroundColor(WQDesignSystem.Colors.accent)
+                            .font(.caption)
+                    }
+                    
+                    Text(quest.title)
+                        .font(WQDesignSystem.Typography.headline)
+                        .foregroundColor(WQDesignSystem.Colors.primaryText)
+                    
+                    Text(quest.description)
+                        .font(WQDesignSystem.Typography.caption)
+                        .foregroundColor(WQDesignSystem.Colors.secondaryText)
+                        .lineLimit(2)
+                    
+                    WQProgressBar(
+                        progress: quest.progressPercentage,
+                        color: WQDesignSystem.Colors.accent,
+                        height: 8
+                    )
+                    
+                    HStack {
+                        Text("Distance: \(quest.currentProgress.formatted(decimalPlaces: 1)) / \(quest.totalDistance.formatted(decimalPlaces: 1)) miles")
+                            .font(WQDesignSystem.Typography.footnote)
+                            .foregroundColor(WQDesignSystem.Colors.secondaryText)
+                        
+                        Spacer()
+                        
+                        if quest.isCompleted {
+                            Text("Complete!")
+                                .font(WQDesignSystem.Typography.caption)
+                                .foregroundColor(WQDesignSystem.Colors.success)
+                        }
                     }
                 }
             }
         }
+        .buttonStyle(PlainButtonStyle())
     }
 }
 
 struct QuestPromptView: View {
+    @EnvironmentObject private var navigationCoordinator: NavigationCoordinator
+    
     var body: some View {
         WQCard {
             VStack(spacing: WQDesignSystem.Spacing.md) {
@@ -374,7 +387,7 @@ struct QuestPromptView: View {
                     .multilineTextAlignment(.center)
                 
                 WQButton("Browse Quests", icon: "arrow.right") {
-                    // Navigate to quest list
+                    navigationCoordinator.navigate(to: .questList)
                 }
             }
         }

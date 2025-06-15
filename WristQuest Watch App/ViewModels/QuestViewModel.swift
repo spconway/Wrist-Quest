@@ -23,6 +23,7 @@ class QuestViewModel: ObservableObject {
         
         setupSubscriptions()
         loadQuests()
+        loadActiveQuest()
         generateInitialQuests()
     }
     
@@ -43,6 +44,7 @@ class QuestViewModel: ObservableObject {
         activeQuest = updatedQuest
         availableQuests.removeAll { $0.id == quest.id }
         
+        saveActiveQuest()
         saveQuests()
     }
     
@@ -63,6 +65,7 @@ class QuestViewModel: ObservableObject {
         
         activeQuest = nil
         generateNewQuests()
+        clearActiveQuest()
         saveQuests()
     }
     
@@ -76,6 +79,7 @@ class QuestViewModel: ObservableObject {
         availableQuests.append(restoredQuest)
         activeQuest = nil
         
+        clearActiveQuest()
         saveQuests()
     }
     
@@ -99,7 +103,7 @@ class QuestViewModel: ObservableObject {
             activeQuest = quest
         }
         
-        saveQuests()
+        saveActiveQuest()
     }
     
     private func calculateStepsToDistance(_ steps: Int) -> Double {
@@ -206,6 +210,38 @@ class QuestViewModel: ObservableObject {
                 try await persistenceService.saveQuestLogs(completedQuests)
             } catch {
                 print("Failed to save quests: \(error)")
+            }
+        }
+    }
+    
+    private func saveActiveQuest() {
+        guard let quest = activeQuest else { return }
+        
+        Task {
+            do {
+                try await persistenceService.saveActiveQuest(quest)
+            } catch {
+                print("Failed to save active quest: \(error)")
+            }
+        }
+    }
+    
+    private func loadActiveQuest() {
+        Task {
+            do {
+                activeQuest = try await persistenceService.loadActiveQuest()
+            } catch {
+                print("Failed to load active quest: \(error)")
+            }
+        }
+    }
+    
+    private func clearActiveQuest() {
+        Task {
+            do {
+                try await persistenceService.clearActiveQuest()
+            } catch {
+                print("Failed to clear active quest: \(error)")
             }
         }
     }

@@ -22,4 +22,8 @@ struct Player: Codable, Identifiable {
         self.inventory = []
         self.journal = []
     }
+    
+    static var preview: Player {
+        Player(name: "Hero", activeClass: .warrior)
+    }
 }

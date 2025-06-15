@@ -8,6 +8,7 @@ class NavigationCoordinator: ObservableObject {
     @Published var presentedFullScreenCover: FullScreenDestination?
     
     enum Destination: Hashable {
+        case questList
         case questDetail(Quest)
         case activeQuest
         case encounter(Encounter)
