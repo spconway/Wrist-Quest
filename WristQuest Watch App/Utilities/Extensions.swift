@@ -63,22 +63,6 @@ extension View {
     }
 }
 
-extension HeroClass {
-    var gradientColors: [Color] {
-        switch self {
-        case .warrior:
-            return [.questRed, .orange]
-        case .mage:
-            return [.questBlue, .questPurple]
-        case .rogue:
-            return [.gray, .black]
-        case .ranger:
-            return [.questGreen, .yellow]
-        case .cleric:
-            return [.white, .questBlue]
-        }
-    }
-}
 
 extension Rarity {
     var color: Color {

@@ -73,12 +73,7 @@ struct OnboardingView: View {
             Text(errorMessage)
         }
         .onAppear {
-            print("🎮 OnboardingView: onAppear called")
-            print("🎮 OnboardingView: Current step: \(currentStep.rawValue)")
             checkHealthPermissionStatus()
-        }
-        .onChange(of: currentStep) { newValue in
-            print("🎮 OnboardingView: currentStep changed to \(newValue.rawValue)")
         }
         .onReceive(gameViewModel.$gameState) { gameState in
             if case .mainMenu = gameState {
@@ -93,17 +88,24 @@ struct OnboardingView: View {
         case .welcome:
             WelcomeStepView(onNext: nextStep)
         case .healthPermission:
-            HealthPermissionStepView()
+            HealthPermissionStepView(
+                status: healthPermissionStatus,
+                isRequesting: isRequestingPermission,
+                onRequest: requestHealthPermission,
+                onNext: nextStep
+            )
         case .characterCreation:
-            CharacterCreationStepView()
+            CharacterCreationStepView(
+                selectedClass: $selectedClass,
+                playerName: $playerName,
+                onNext: nextStep
+            )
         case .tutorialQuest:
-            TutorialQuestStepView()
+            TutorialQuestStepView(onNext: nextStep)
         case .complete:
-            CompletionStepView()
+            CompletionStepView(onComplete: completeOnboarding)
         }
     }
-    
-    // MARK: - Helper Methods
     
     var canProceed: Bool {
         switch currentStep {
@@ -121,50 +123,19 @@ struct OnboardingView: View {
     }
     
     func nextStep() {
-        print("🎮 OnboardingView: nextStep() called")
-        print("🎮 OnboardingView: currentStep = \(currentStep)")
-        print("🎮 OnboardingView: canProceed = \(canProceed)")
-        
-        guard canProceed else { 
-            print("🎮 OnboardingView: Cannot proceed, returning early")
-            return 
-        }
-        
-        let oldStep = currentStep
+        guard canProceed else { return }
         
         switch currentStep {
         case .welcome:
-            print("🎮 OnboardingView: Moving from welcome to healthPermission")
             currentStep = .healthPermission
         case .healthPermission:
-            print("🎮 OnboardingView: Moving from healthPermission to characterCreation")
             currentStep = .characterCreation
         case .characterCreation:
-            print("🎮 OnboardingView: Moving from characterCreation to tutorialQuest")
             currentStep = .tutorialQuest
         case .tutorialQuest:
-            print("🎮 OnboardingView: Moving from tutorialQuest to complete")
             currentStep = .complete
         case .complete:
-            print("🎮 OnboardingView: Completing onboarding")
             completeOnboarding()
-        }
-        
-        print("🎮 OnboardingView: Step changed from \(oldStep) to \(currentStep)")
-    }
-    
-    func previousStep() {
-        switch currentStep {
-        case .welcome:
-            break
-        case .healthPermission:
-            currentStep = .welcome
-        case .characterCreation:
-            currentStep = .healthPermission
-        case .tutorialQuest:
-            currentStep = .characterCreation
-        case .complete:
-            currentStep = .tutorialQuest
         }
     }
     
@@ -185,14 +156,6 @@ struct OnboardingView: View {
                 self.isRequestingPermission = false
             }
         }
-    }
-    
-    func selectClass(_ heroClass: HeroClass) {
-        selectedClass = heroClass
-    }
-    
-    func updatePlayerName(_ name: String) {
-        playerName = name
     }
     
     private func checkHealthPermissionStatus() {
@@ -226,6 +189,8 @@ struct OnboardingView: View {
     }
 }
 
+// MARK: - Individual Step Views
+
 struct WelcomeStepView: View {
     let onNext: () -> Void
     
@@ -257,7 +222,6 @@ struct WelcomeStepView: View {
                 Spacer(minLength: WQDesignSystem.Spacing.lg)
                 
                 WQButton("Get Started", icon: "arrow.right") {
-                    print("🎮 WelcomeStepView: Button tapped!")
                     onNext()
                 }
                 .padding(.horizontal, WQDesignSystem.Spacing.md)
@@ -268,26 +232,172 @@ struct WelcomeStepView: View {
 }
 
 struct HealthPermissionStepView: View {
+    let status: HealthAuthorizationStatus
+    let isRequesting: Bool
+    let onRequest: () -> Void
+    let onNext: () -> Void
+    
     var body: some View {
-        Text("Health Permission Step")
+        VStack(spacing: WQDesignSystem.Spacing.lg) {
+            Text("Health Permission")
+                .font(WQDesignSystem.Typography.title)
+                .foregroundColor(WQDesignSystem.Colors.primaryText)
+            
+            Text("To power your quests with real activity, Wrist Quest needs access to your health data.")
+                .font(WQDesignSystem.Typography.body)
+                .foregroundColor(WQDesignSystem.Colors.secondaryText)
+                .multilineTextAlignment(.center)
+            
+            if status == .authorized {
+                VStack {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.largeTitle)
+                        .foregroundColor(.green)
+                    Text("Health access granted!")
+                        .foregroundColor(.green)
+                }
+                
+                WQButton("Continue", icon: "arrow.right") {
+                    onNext()
+                }
+            } else {
+                WQButton(isRequesting ? "Requesting..." : "Grant Health Access", icon: "heart.fill") {
+                    onRequest()
+                }
+                .disabled(isRequesting)
+            }
+        }
+        .padding(WQDesignSystem.Spacing.lg)
     }
 }
 
 struct CharacterCreationStepView: View {
+    @Binding var selectedClass: HeroClass?
+    @Binding var playerName: String
+    let onNext: () -> Void
+    
     var body: some View {
-        Text("Character Creation Step")
+        ScrollView {
+            VStack(spacing: WQDesignSystem.Spacing.lg) {
+                Text("Choose Your Hero")
+                    .font(WQDesignSystem.Typography.title)
+                    .foregroundColor(WQDesignSystem.Colors.primaryText)
+                
+                TextField("Hero Name", text: $playerName)
+                
+                Text("Select your class:")
+                    .font(WQDesignSystem.Typography.headline)
+                    .foregroundColor(WQDesignSystem.Colors.primaryText)
+                
+                LazyVGrid(columns: [GridItem(.flexible())], spacing: WQDesignSystem.Spacing.sm) {
+                    ForEach(HeroClass.allCases, id: \.self) { heroClass in
+                        ClassSelectionCard(
+                            heroClass: heroClass,
+                            isSelected: selectedClass == heroClass
+                        ) {
+                            selectedClass = heroClass
+                        }
+                    }
+                }
+                
+                if selectedClass != nil && !playerName.isEmpty {
+                    WQButton("Continue", icon: "arrow.right") {
+                        onNext()
+                    }
+                }
+            }
+            .padding(WQDesignSystem.Spacing.md)
+        }
+    }
+}
+
+struct ClassSelectionCard: View {
+    let heroClass: HeroClass
+    let isSelected: Bool
+    let onTap: () -> Void
+    
+    var body: some View {
+        WQCard {
+            VStack(spacing: WQDesignSystem.Spacing.sm) {
+                HStack {
+                    Image(systemName: heroClass.iconName)
+                        .font(.title2)
+                        .foregroundColor(heroClass.color)
+                    
+                    Text(heroClass.displayName)
+                        .font(WQDesignSystem.Typography.headline)
+                        .foregroundColor(WQDesignSystem.Colors.primaryText)
+                    
+                    Spacer()
+                    
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                    }
+                }
+                
+                Text(heroClass.shortDescription)
+                    .font(WQDesignSystem.Typography.caption)
+                    .foregroundColor(WQDesignSystem.Colors.secondaryText)
+                    .multilineTextAlignment(.leading)
+            }
+        }
+        .onTapGesture {
+            onTap()
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isSelected ? .green : Color.clear, lineWidth: 2)
+        )
     }
 }
 
 struct TutorialQuestStepView: View {
+    let onNext: () -> Void
+    
     var body: some View {
-        Text("Tutorial Quest Step")
+        VStack(spacing: WQDesignSystem.Spacing.lg) {
+            Text("Your First Quest")
+                .font(WQDesignSystem.Typography.title)
+                .foregroundColor(WQDesignSystem.Colors.primaryText)
+            
+            Text("Time to learn the basics! Your first quest awaits.")
+                .font(WQDesignSystem.Typography.body)
+                .foregroundColor(WQDesignSystem.Colors.secondaryText)
+                .multilineTextAlignment(.center)
+            
+            WQButton("Start Tutorial Quest", icon: "play.fill") {
+                onNext()
+            }
+        }
+        .padding(WQDesignSystem.Spacing.lg)
     }
 }
 
 struct CompletionStepView: View {
+    let onComplete: () -> Void
+    
     var body: some View {
-        Text("Completion Step")
+        VStack(spacing: WQDesignSystem.Spacing.lg) {
+            Image(systemName: "crown.fill")
+                .font(.largeTitle)
+                .foregroundColor(WQDesignSystem.Colors.accent)
+                .scaleEffect(1.5)
+            
+            Text("Ready to Adventure!")
+                .font(WQDesignSystem.Typography.title)
+                .foregroundColor(WQDesignSystem.Colors.primaryText)
+            
+            Text("Your hero is ready to begin their legendary journey.")
+                .font(WQDesignSystem.Typography.body)
+                .foregroundColor(WQDesignSystem.Colors.secondaryText)
+                .multilineTextAlignment(.center)
+            
+            WQButton("Begin Adventure", icon: "arrow.right") {
+                onComplete()
+            }
+        }
+        .padding(WQDesignSystem.Spacing.lg)
     }
 }
 

@@ -40,8 +40,9 @@ class GameStateManager: ObservableObject {
         case .onboarding:
             navigationCoordinator.presentFullScreenCover(.onboarding)
             
-        case .characterCreation:
-            navigationCoordinator.presentFullScreenCover(.characterCreation)
+        case .mysticalTransition:
+            // Handle mystical transition state
+            break
             
         case .mainMenu:
             navigationCoordinator.dismissFullScreenCover()
@@ -83,8 +84,7 @@ class GameStateManager: ObservableObject {
     
     func canTransition(to newState: GameState) -> Bool {
         switch (currentState, newState) {
-        case (.onboarding, .characterCreation),
-             (.characterCreation, .mainMenu),
+        case (.onboarding, .mainMenu),
              (.mainMenu, _),
              (_, .onboarding):
             return true

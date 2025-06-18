@@ -32,6 +32,16 @@
 			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		BA5557132DFE943C000CADD8 /* Embed ExtensionKit Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(EXTENSIONS_FOLDER_PATH)";
+			dstSubfolderSpec = 16;
+			files = (
+			);
+			name = "Embed ExtensionKit Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -104,6 +114,7 @@
 				BA5555AE2DFD0BD1000CADD8 /* Sources */,
 				BA5555AF2DFD0BD1000CADD8 /* Frameworks */,
 				BA5555B02DFD0BD1000CADD8 /* Resources */,
+				BA5557132DFE943C000CADD8 /* Embed ExtensionKit Extensions */,
 			);
 			buildRules = (
 			);
@@ -321,6 +332,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = WristQuest;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Wrist Quest uses your health data to power epic adventures. Your steps become travel distance, heart rate\n   triggers combat encounters, and exercise minutes unlock magical abilities.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Wrist Quest needs to read your health data to create personalized quests and track your heroic progress\n  through real-world activity.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKWatchOnly = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -351,6 +364,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = WristQuest;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Wrist Quest uses your health data to power epic adventures. Your steps become travel distance, heart rate\n   triggers combat encounters, and exercise minutes unlock magical abilities.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Wrist Quest needs to read your health data to create personalized quests and track your heroic progress\n  through real-world activity.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKWatchOnly = YES;
 				LD_RUNPATH_SEARCH_PATHS = (

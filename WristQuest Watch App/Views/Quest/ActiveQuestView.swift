@@ -19,7 +19,7 @@ struct ActiveQuestView: View {
                     if activeQuest.isCompleted {
                         QuestCompletedView(quest: activeQuest)
                     } else {
-                        QuestProgressView(quest: activeQuest)
+                        ActiveQuestProgressView(quest: activeQuest)
                         
                         ActivityTrackingView()
                         
@@ -74,7 +74,7 @@ struct ActiveQuestView: View {
     }
 }
 
-struct QuestProgressView: View {
+struct ActiveQuestProgressView: View {
     let quest: Quest
     
     var body: some View {

@@ -4,7 +4,7 @@ import Combine
 
 enum GameState: Equatable {
     case onboarding
-    case characterCreation
+    case mysticalTransition
     case mainMenu
     case activeQuest(Quest)
     case encounter(Encounter)
@@ -15,7 +15,7 @@ enum GameState: Equatable {
     static func == (lhs: GameState, rhs: GameState) -> Bool {
         switch (lhs, rhs) {
         case (.onboarding, .onboarding),
-             (.characterCreation, .characterCreation),
+             (.mysticalTransition, .mysticalTransition),
              (.mainMenu, .mainMenu),
              (.inventory, .inventory),
              (.journal, .journal),
@@ -37,6 +37,12 @@ class GameViewModel: ObservableObject {
     @Published var currentPlayer: Player?
     @Published var isLoading = false
     @Published var errorMessage: String?
+    
+    // Fantasy State
+    @Published var isPlayingIntroSequence = false
+    @Published var heroAscensionProgress: Double = 0.0
+    @Published var realmWelcomeMessage: String = ""
+    @Published var legendBeginning = false
     
     private var cancellables = Set<AnyCancellable>()
     
@@ -123,15 +129,18 @@ class GameViewModel: ObservableObject {
     }
     
     func startGame(with player: Player) {
+        // Begin the mystical transition from onboarding to gameplay
         currentPlayer = player
-        gameState = .mainMenu
+        gameState = .mysticalTransition
+        isPlayingIntroSequence = true
+        legendBeginning = true
         
-        Task {
-            do {
-                try await persistenceService.savePlayer(player)
-            } catch {
-                errorMessage = "Failed to save player: \(error.localizedDescription)"
-            }
+        // Generate welcome message based on player's class
+        generateRealmWelcome(for: player)
+        
+        // Animate hero ascension
+        animateHeroAscension {
+            self.completeGameStart(with: player)
         }
     }
     
@@ -196,6 +205,7 @@ class GameViewModel: ObservableObject {
     func resetOnboarding() {
         currentPlayer = nil
         gameState = .onboarding
+        resetFantasyState()
         
         Task {
             do {
@@ -205,4 +215,92 @@ class GameViewModel: ObservableObject {
             }
         }
     }
+    
+    // MARK: - Fantasy Game State Management
+    
+    private func generateRealmWelcome(for player: Player) {
+        let welcomeMessages: [HeroClass: String] = [
+            .warrior: "The realm trembles as a new warrior rises. Your legend of valor begins, \(player.name).",
+            .mage: "Ancient magics stir as the arcane arts call to you, \(player.name). Reality bends to your will.",
+            .rogue: "Shadows embrace their new master. The hidden paths await your footsteps, \(player.name).",
+            .ranger: "The wild places sing your name, \(player.name). Nature itself shall be your ally.",
+            .cleric: "Divine light shines upon the realm. You are blessed and chosen, \(player.name)."
+        ]
+        
+        realmWelcomeMessage = welcomeMessages[player.activeClass] ?? "The realm welcomes its newest hero, \(player.name)."
+    }
+    
+    private func animateHeroAscension(completion: @escaping () -> Void) {
+        let animationDuration: TimeInterval = 3.0
+        let steps = 10
+        let stepDuration = animationDuration / Double(steps)
+        
+        var currentStep = 0
+        
+        Timer.scheduledTimer(withTimeInterval: stepDuration, repeats: true) { timer in
+            currentStep += 1
+            let progress = Double(currentStep) / Double(steps)
+            
+            DispatchQueue.main.async {
+                self.heroAscensionProgress = progress
+                
+                if currentStep >= steps {
+                    timer.invalidate()
+                    completion()
+                }
+            }
+        }
+    }
+    
+    private func completeGameStart(with player: Player) {
+        // Final transition to main menu
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.gameState = .mainMenu
+            self.isPlayingIntroSequence = false
+        }
+        
+        // Save player data
+        Task {
+            do {
+                try await persistenceService.savePlayer(player)
+            } catch {
+                errorMessage = "Failed to save player: \(error.localizedDescription)"
+            }
+        }
+    }
+    
+    private func resetFantasyState() {
+        isPlayingIntroSequence = false
+        heroAscensionProgress = 0.0
+        realmWelcomeMessage = ""
+        legendBeginning = false
+    }
+    
+    // MARK: - Epic Moments Support
+    
+    func triggerEpicGameMoment(_ moment: GameEpicMoment) {
+        switch moment {
+        case .firstQuestBegin:
+            // Handle first quest epic moment
+            break
+        case .levelUp(let newLevel):
+            // Handle level up celebration
+            break
+        case .rareLootFound(let item):
+            // Handle rare loot discovery
+            break
+        case .questComplete(let quest):
+            // Handle quest completion ceremony
+            break
+        }
+    }
+}
+
+// MARK: - Supporting Types
+
+enum GameEpicMoment {
+    case firstQuestBegin
+    case levelUp(Int)
+    case rareLootFound(String) // Item name
+    case questComplete(String) // Quest name
 }
