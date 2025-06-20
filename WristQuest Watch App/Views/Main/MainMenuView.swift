@@ -26,10 +26,13 @@ struct MainMenuView: View {
                     }
                 } else {
                     WQLoadingView("Loading your adventure...")
+                        .accessibilityLabel("Loading your adventure. Please wait.")
                 }
             }
             .padding(WQDesignSystem.Spacing.md)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(AccessibilityConstants.Navigation.mainMenu)
         .navigationTitle("Wrist Quest")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -60,6 +63,8 @@ struct PlayerHeaderView: View {
                             )
                         )
                         .cornerRadius(WQDesignSystem.CornerRadius.md)
+                        .accessibilityLabel("Character class: \(player.activeClass.displayName)")
+                        .accessibilityHidden(true)
                     
                     VStack(alignment: .leading, spacing: WQDesignSystem.Spacing.xs) {
                         Text(player.name)
@@ -78,21 +83,33 @@ struct PlayerHeaderView: View {
                             Image(systemName: "star.fill")
                                 .foregroundColor(.yellow)
                                 .font(.caption)
+                                .accessibilityHidden(true)
                             Text("\(player.xp)")
                                 .font(WQDesignSystem.Typography.caption)
                                 .foregroundColor(WQDesignSystem.Colors.primaryText)
                         }
+                        .wqStatAccessible(
+                            statType: .experience,
+                            value: "\(player.xp)"
+                        )
                         
                         HStack(spacing: WQDesignSystem.Spacing.xs) {
                             Image(systemName: "dollarsign.circle.fill")
                                 .foregroundColor(.yellow)
                                 .font(.caption)
+                                .accessibilityHidden(true)
                             Text("\(player.gold)")
                                 .font(WQDesignSystem.Typography.caption)
                                 .foregroundColor(WQDesignSystem.Colors.primaryText)
                         }
+                        .wqStatAccessible(
+                            statType: .gold,
+                            value: "\(player.gold)"
+                        )
                     }
                 }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Player info: \(player.name), \(AccessibilityConstants.Player.levelDescription(player.level, player.activeClass.displayName))")
                 
                 // XP Progress Bar
                 VStack(alignment: .leading, spacing: WQDesignSystem.Spacing.xs) {
@@ -107,13 +124,23 @@ struct PlayerHeaderView: View {
                             .font(WQDesignSystem.Typography.caption)
                             .foregroundColor(WQDesignSystem.Colors.secondaryText)
                     }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(AccessibilityConstants.Player.experienceDescription(player.xp, xpForNextLevel(player.level + 1)))
                     
                     WQProgressBar(
                         progress: xpProgress(for: player),
                         color: player.activeClass.gradientColors.first ?? WQDesignSystem.Colors.accent,
                         height: 6
                     )
+                    .wqProgressAccessible(
+                        type: .experienceProgress,
+                        current: Double(player.xp - xpForNextLevel(player.level)),
+                        total: Double(xpForNextLevel(player.level + 1) - xpForNextLevel(player.level)),
+                        unit: "experience points"
+                    )
                 }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(AccessibilityConstants.Player.experienceProgressHint)
             }
         }
     }
@@ -144,6 +171,7 @@ struct ActivitySummaryView: View {
                     Text("Today's Activity")
                         .font(WQDesignSystem.Typography.headline)
                         .foregroundColor(WQDesignSystem.Colors.primaryText)
+                        .accessibilityAddTraits(.isHeader)
                     
                     Spacer()
                     
@@ -154,7 +182,10 @@ struct ActivitySummaryView: View {
                         .padding(.vertical, WQDesignSystem.Spacing.xs)
                         .background(WQDesignSystem.Colors.accent.opacity(0.1))
                         .cornerRadius(WQDesignSystem.CornerRadius.sm)
+                        .accessibilityLabel("Daily activity score: \(healthViewModel.dailyActivityScore)")
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(AccessibilityConstants.Health.activitySummary)
                 
                 LazyVGrid(columns: [
                     GridItem(.flexible()),
@@ -166,12 +197,21 @@ struct ActivitySummaryView: View {
                         value: "\(healthViewModel.currentHealthData.steps)",
                         color: WQDesignSystem.Colors.questBlue
                     )
+                    .wqHealthMetricAccessible(
+                        metric: .steps,
+                        value: AccessibilityConstants.Health.stepsValue(healthViewModel.currentHealthData.steps)
+                    )
                     
                     ActivityStatView(
                         icon: "heart.fill",
                         title: "Heart Rate",
                         value: "\(Int(healthViewModel.currentHealthData.heartRate)) BPM",
                         color: WQDesignSystem.Colors.questRed
+                    )
+                    .wqHealthMetricAccessible(
+                        metric: .heartRate,
+                        value: AccessibilityConstants.Health.heartRateValue(Int(healthViewModel.currentHealthData.heartRate)),
+                        isActive: healthViewModel.isInCombatMode
                     )
                     
                     ActivityStatView(
@@ -180,6 +220,10 @@ struct ActivitySummaryView: View {
                         value: "\(healthViewModel.currentHealthData.standingHours)",
                         color: WQDesignSystem.Colors.questGreen
                     )
+                    .wqHealthMetricAccessible(
+                        metric: .standHours,
+                        value: AccessibilityConstants.Health.standHoursValue(healthViewModel.currentHealthData.standingHours)
+                    )
                     
                     ActivityStatView(
                         icon: "flame.fill",
@@ -187,13 +231,20 @@ struct ActivitySummaryView: View {
                         value: "\(healthViewModel.currentHealthData.exerciseMinutes) min",
                         color: WQDesignSystem.Colors.questOrange
                     )
+                    .wqHealthMetricAccessible(
+                        metric: .exerciseMinutes,
+                        value: AccessibilityConstants.Health.exerciseMinutesValue(healthViewModel.currentHealthData.exerciseMinutes)
+                    )
                 }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Activity metrics for today")
                 
                 if healthViewModel.isInCombatMode {
                     HStack {
                         Image(systemName: "bolt.fill")
                             .foregroundColor(WQDesignSystem.Colors.questRed)
                             .font(.caption)
+                            .accessibilityHidden(true)
                         
                         Text("Combat Mode Active!")
                             .font(WQDesignSystem.Typography.caption)
@@ -203,6 +254,9 @@ struct ActivitySummaryView: View {
                     .padding(.vertical, WQDesignSystem.Spacing.xs)
                     .background(WQDesignSystem.Colors.questRed.opacity(0.1))
                     .cornerRadius(WQDesignSystem.CornerRadius.sm)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(AccessibilityConstants.Health.combatModeActive)
+                    .accessibilityAddTraits(.startsMediaSession)
                 }
             }
         }
@@ -251,6 +305,9 @@ struct QuickActionsView: View {
             ) {
                 navigationCoordinator.navigate(to: .questList)
             }
+            .wqNavigationAccessible(
+                destination: .questList
+            )
             
             QuickActionButton(
                 icon: "person.fill",
@@ -259,6 +316,9 @@ struct QuickActionsView: View {
             ) {
                 navigationCoordinator.navigate(to: .characterDetail)
             }
+            .wqNavigationAccessible(
+                destination: .character
+            )
             
             QuickActionButton(
                 icon: "bag.fill",
@@ -267,6 +327,9 @@ struct QuickActionsView: View {
             ) {
                 navigationCoordinator.navigate(to: .inventory)
             }
+            .wqNavigationAccessible(
+                destination: .inventory
+            )
             
             QuickActionButton(
                 icon: "book.fill",
@@ -275,7 +338,12 @@ struct QuickActionsView: View {
             ) {
                 navigationCoordinator.navigate(to: .journal)
             }
+            .wqNavigationAccessible(
+                destination: .journal
+            )
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Quick navigation actions")
     }
 }
 
@@ -330,6 +398,7 @@ struct ActiveQuestCardView: View {
                         Image(systemName: "chevron.right")
                             .foregroundColor(WQDesignSystem.Colors.accent)
                             .font(.caption)
+                            .accessibilityHidden(true)
                     }
                     
                     Text(quest.title)
@@ -346,9 +415,10 @@ struct ActiveQuestCardView: View {
                         color: WQDesignSystem.Colors.accent,
                         height: 8
                     )
+                    .accessibilityHidden(true)
                     
                     HStack {
-                        Text("Distance: \(quest.currentProgress.formatted(decimalPlaces: 1)) / \(quest.totalDistance.formatted(decimalPlaces: 1)) miles")
+                        Text("Distance: \(String(format: "%.1f", quest.currentProgress)) / \(String(format: "%.1f", quest.totalDistance)) miles")
                             .font(WQDesignSystem.Typography.footnote)
                             .foregroundColor(WQDesignSystem.Colors.secondaryText)
                         
@@ -364,6 +434,18 @@ struct ActiveQuestCardView: View {
             }
         }
         .buttonStyle(PlainButtonStyle())
+        .wqQuestAccessible(
+            quest: WQQuestAccessibilityInfo(
+                title: quest.title,
+                description: quest.description,
+                isActive: true,
+                isCompleted: quest.isCompleted,
+                progress: quest.progressPercentage,
+                rewardXP: quest.rewardXP,
+                rewardGold: quest.rewardGold
+            ),
+            action: .view
+        )
     }
 }
 
@@ -376,10 +458,13 @@ struct QuestPromptView: View {
                 Image(systemName: "map")
                     .font(.largeTitle)
                     .foregroundColor(WQDesignSystem.Colors.accent)
+                    .accessibilityLabel("Map icon")
+                    .accessibilityHidden(true)
                 
                 Text("Ready for Adventure?")
                     .font(WQDesignSystem.Typography.headline)
                     .foregroundColor(WQDesignSystem.Colors.primaryText)
+                    .accessibilityAddTraits(.isHeader)
                 
                 Text("Start a quest to begin earning XP and rewards for your activity")
                     .font(WQDesignSystem.Typography.caption)
@@ -389,7 +474,13 @@ struct QuestPromptView: View {
                 WQButton("Browse Quests", icon: "arrow.right") {
                     navigationCoordinator.navigate(to: .questList)
                 }
+                .accessibleActionButton(
+                    actionName: AccessibilityConstants.Quests.browseQuestsButton,
+                    description: AccessibilityConstants.Quests.browseQuestsHint
+                )
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Quest prompt: Ready for adventure? Start a quest to begin earning experience and rewards")
         }
     }
 }

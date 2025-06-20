@@ -12,9 +12,33 @@ import ClockKit
 @main
 struct WristQuest_Watch_AppApp: App {
     @StateObject private var navigationCoordinator = NavigationCoordinator()
-    @StateObject private var gameViewModel = GameViewModel()
-    @StateObject private var healthViewModel = HealthViewModel()
+    @StateObject private var gameViewModel: GameViewModel
+    @StateObject private var healthViewModel: HealthViewModel
     @StateObject private var backgroundTaskManager = BackgroundTaskManager()
+    
+    init() {
+        print("🚀 WristQuestApp: Starting app initialization")
+        
+        // Configure dependency injection FIRST - before creating any services
+        print("🚀 WristQuestApp: Configuring DIConfiguration")
+        DIConfiguration.shared.configure(for: .production)
+        print("🚀 WristQuestApp: DIConfiguration configured")
+        
+        // Create ViewModels AFTER DI configuration is complete
+        // ViewModels now create their own service instances to avoid circular dependencies
+        print("🚀 WristQuestApp: Creating GameViewModel")
+        let gameVM = GameViewModel()
+        print("🚀 WristQuestApp: GameViewModel created")
+        
+        print("🚀 WristQuestApp: Creating HealthViewModel")
+        let healthVM = HealthViewModel()
+        print("🚀 WristQuestApp: HealthViewModel created")
+        
+        self._gameViewModel = StateObject(wrappedValue: gameVM)
+        self._healthViewModel = StateObject(wrappedValue: healthVM)
+        
+        print("🚀 WristQuestApp: App initialization complete")
+    }
     
     var body: some Scene {
         WindowGroup {
@@ -36,6 +60,12 @@ struct WristQuest_Watch_AppApp: App {
     }
     
     private func setupApp() {
+        let logger = DIConfiguration.shared.resolveLoggingService()
+        let analytics = DIConfiguration.shared.resolveAnalyticsService()
+        
+        logger.info("Setting up WristQuest app", category: .system)
+        analytics.trackGameAction(.appLaunched, parameters: nil)
+        
         backgroundTaskManager.scheduleBackgroundRefresh()
         
         if healthViewModel.isAuthorized {
@@ -47,6 +77,9 @@ struct WristQuest_Watch_AppApp: App {
     }
     
     private func handleAppForeground() {
+        let logger = DIConfiguration.shared.resolveLoggingService()
+        logger.info("App entering foreground", category: .system)
+        
         if healthViewModel.isAuthorized {
             healthViewModel.startHealthMonitoring()
         }
@@ -56,6 +89,12 @@ struct WristQuest_Watch_AppApp: App {
     }
     
     private func handleAppBackground() {
+        let logger = DIConfiguration.shared.resolveLoggingService()
+        let analytics = DIConfiguration.shared.resolveAnalyticsService()
+        
+        logger.info("App entering background", category: .system)
+        analytics.trackGameAction(.appBackgrounded, parameters: nil)
+        
         backgroundTaskManager.scheduleBackgroundRefresh()
         
         // Update complications when app goes to background

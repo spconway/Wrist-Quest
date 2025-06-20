@@ -27,6 +27,8 @@ struct QuestDetailView: View {
             }
             .padding(WQDesignSystem.Spacing.md)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Quest details for \(quest.title)")
         .navigationTitle(quest.title)
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
@@ -38,16 +40,27 @@ struct QuestDetailView: View {
         .confirmationDialog("Start Quest", isPresented: $showingStartConfirmation) {
             Button("Start Adventure") {
                 startQuest()
+                AccessibilityHelpers.announce("Quest started: \(quest.title)")
             }
+            .accessibleActionButton(
+                actionName: "Start Adventure",
+                description: "Begin the quest \(quest.title)"
+            )
             
             Button("Cancel", role: .cancel) { }
+            .accessibleActionButton(
+                actionName: AccessibilityConstants.Navigation.cancelButton,
+                description: "Cancel starting the quest"
+            )
         } message: {
             Text("Begin \(quest.title)? Your progress will be tracked through your daily activity.")
+                .accessibilityLabel("Confirmation: Begin \(quest.title)? Your progress will be tracked through your daily activity.")
         }
     }
     
     private func startQuest() {
         questViewModel.startQuest(quest)
+        AccessibilityHelpers.announce(AccessibilityConstants.Announcements.questStarted)
         navigationCoordinator.navigate(to: .activeQuest)
     }
 }
@@ -69,10 +82,13 @@ struct QuestHeaderView: View {
                             )
                         )
                         .frame(width: 80, height: 80)
+                        .accessibilityHidden(true)
                     
                     Image(systemName: questIcon(for: quest))
                         .font(.system(size: 32, weight: .medium))
                         .foregroundColor(.white)
+                        .accessibilityLabel("Quest icon")
+                        .accessibilityHidden(true)
                 }
                 
                 VStack(spacing: WQDesignSystem.Spacing.xs) {
@@ -80,6 +96,7 @@ struct QuestHeaderView: View {
                         .font(WQDesignSystem.Typography.title)
                         .foregroundColor(WQDesignSystem.Colors.primaryText)
                         .multilineTextAlignment(.center)
+                        .accessibilityAddTraits(.isHeader)
                     
                     Text(questDifficulty(for: quest))
                         .font(WQDesignSystem.Typography.caption)
@@ -88,7 +105,10 @@ struct QuestHeaderView: View {
                         .padding(.vertical, WQDesignSystem.Spacing.xs)
                         .background(difficultyColor(for: quest).opacity(0.1))
                         .cornerRadius(WQDesignSystem.CornerRadius.sm)
+                        .accessibilityLabel("Difficulty: \(questDifficulty(for: quest))")
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Quest: \(quest.title), Difficulty: \(questDifficulty(for: quest))")
             }
         }
     }
@@ -149,6 +169,7 @@ struct QuestStatsView: View {
                     Text("Quest Details")
                         .font(WQDesignSystem.Typography.headline)
                         .foregroundColor(WQDesignSystem.Colors.primaryText)
+                        .accessibilityAddTraits(.isHeader)
                     
                     Spacer()
                 }
@@ -161,6 +182,8 @@ struct QuestStatsView: View {
                         subtitle: "≈ \(Int(quest.totalDistance * 2000)) steps",
                         color: WQDesignSystem.Colors.questBlue
                     )
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Distance: \(quest.totalDistance.formatted(decimalPlaces: 1)) miles, approximately \(Int(quest.totalDistance * 2000)) steps")
                     
                     Spacer()
                     
@@ -172,6 +195,9 @@ struct QuestStatsView: View {
                             subtitle: "",
                             color: WQDesignSystem.Colors.questGold
                         )
+                        .wqRewardAccessible(
+                            reward: WQRewardInfo(type: .experience, amount: quest.rewardXP)
+                        )
                         
                         QuestDetailStatView(
                             icon: "dollarsign.circle.fill",
@@ -180,8 +206,15 @@ struct QuestStatsView: View {
                             subtitle: "",
                             color: WQDesignSystem.Colors.questGold
                         )
+                        .wqRewardAccessible(
+                            reward: WQRewardInfo(type: .gold, amount: quest.rewardGold)
+                        )
                     }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel("Rewards: \(quest.rewardXP) experience points and \(quest.rewardGold) gold")
                 }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Quest statistics: \(quest.totalDistance.formatted(decimalPlaces: 1)) miles distance, \(quest.rewardXP) experience points, \(quest.rewardGold) gold")
             }
         }
     }
@@ -228,23 +261,29 @@ struct QuestDescriptionView: View {
                 Text("Description")
                     .font(WQDesignSystem.Typography.headline)
                     .foregroundColor(WQDesignSystem.Colors.primaryText)
+                    .accessibilityAddTraits(.isHeader)
                 
                 Text(quest.description)
                     .font(WQDesignSystem.Typography.body)
                     .foregroundColor(WQDesignSystem.Colors.secondaryText)
                     .lineSpacing(4)
+                    .accessibilityLabel("Quest description: \(quest.description)")
                 
                 if !questLore(for: quest).isEmpty {
                     Divider()
                         .background(WQDesignSystem.Colors.border)
+                        .accessibilityHidden(true)
                     
                     Text(questLore(for: quest))
                         .font(WQDesignSystem.Typography.caption)
                         .foregroundColor(WQDesignSystem.Colors.secondaryText)
                         .italic()
                         .lineSpacing(2)
+                        .accessibilityLabel("Quest lore: \(questLore(for: quest))")
                 }
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Quest description section")
         }
     }
     
@@ -277,6 +316,7 @@ struct QuestRequirementsView: View {
                 Text("How It Works")
                     .font(WQDesignSystem.Typography.headline)
                     .foregroundColor(WQDesignSystem.Colors.primaryText)
+                    .accessibilityAddTraits(.isHeader)
                 
                 VStack(alignment: .leading, spacing: WQDesignSystem.Spacing.sm) {
                     RequirementRow(
@@ -284,19 +324,27 @@ struct QuestRequirementsView: View {
                         text: "Walk or run to progress your quest",
                         color: WQDesignSystem.Colors.questBlue
                     )
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(AccessibilityConstants.Tips.tip1)
                     
                     RequirementRow(
                         icon: "heart.fill",
                         text: "Elevated heart rate may trigger encounters",
                         color: WQDesignSystem.Colors.questRed
                     )
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(AccessibilityConstants.Tips.tip2)
                     
                     RequirementRow(
                         icon: "checkmark.circle.fill",
                         text: "Complete the distance to finish the quest",
                         color: WQDesignSystem.Colors.questGreen
                     )
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Complete the distance to finish the quest")
                 }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Quest instructions and requirements")
             }
         }
     }
@@ -313,6 +361,7 @@ struct RequirementRow: View {
                 .font(.caption)
                 .foregroundColor(color)
                 .frame(width: 20)
+                .accessibilityHidden(true)
             
             Text(text)
                 .font(WQDesignSystem.Typography.caption)
@@ -321,6 +370,8 @@ struct RequirementRow: View {
             
             Spacer()
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(text)
     }
 }
 
@@ -332,13 +383,17 @@ struct QuestActionButton: View {
         WQButton("Start Quest", icon: "play.fill") {
             action()
         }
+        .accessibleActionButton(
+            actionName: AccessibilityConstants.Quests.startQuestButton,
+            description: AccessibilityConstants.Quests.startQuestHint
+        )
     }
 }
 
 #Preview {
     NavigationStack {
         QuestDetailView(
-            quest: Quest(
+            quest: try! Quest(
                 title: "Explore the Goblin Caves",
                 description: "Venture into the dark caverns beneath the forest to discover ancient treasures and face the goblin clans.",
                 totalDistance: 50.0,

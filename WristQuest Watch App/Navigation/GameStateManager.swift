@@ -2,6 +2,8 @@ import Foundation
 import SwiftUI
 import Combine
 
+// Note: WQConstants are accessed globally via WQC typealias
+
 @MainActor
 class GameStateManager: ObservableObject {
     @Published var currentState: GameState = .onboarding
@@ -29,7 +31,7 @@ class GameStateManager: ObservableObject {
         
         isTransitioning = true
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + WQC.UI.hapticDelay) {
             self.currentState = newState
             self.isTransitioning = false
         }

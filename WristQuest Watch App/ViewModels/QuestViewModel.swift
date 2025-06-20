@@ -2,6 +2,8 @@ import Foundation
 import SwiftUI
 import Combine
 
+// Note: WQConstants are accessed globally via WQC typealias
+
 @MainActor
 class QuestViewModel: ObservableObject {
     @Published var availableQuests: [Quest] = []
@@ -23,14 +25,27 @@ class QuestViewModel: ObservableObject {
     private let persistenceService: PersistenceServiceProtocol
     private let healthService: HealthServiceProtocol
     private let playerViewModel: PlayerViewModel
+    private let logger: LoggingServiceProtocol?
+    private let analytics: AnalyticsServiceProtocol?
+    private let tutorialService: TutorialServiceProtocol
+    private let questGenerationService: QuestGenerationServiceProtocol
     
     init(playerViewModel: PlayerViewModel,
          persistenceService: PersistenceServiceProtocol = PersistenceService(),
-         healthService: HealthServiceProtocol = HealthService()) {
+         healthService: HealthServiceProtocol = HealthService(),
+         tutorialService: TutorialServiceProtocol = TutorialService(),
+         questGenerationService: QuestGenerationServiceProtocol = QuestGenerationService(),
+         logger: LoggingServiceProtocol? = nil,
+         analytics: AnalyticsServiceProtocol? = nil) {
         self.playerViewModel = playerViewModel
         self.persistenceService = persistenceService
         self.healthService = healthService
+        self.tutorialService = tutorialService
+        self.questGenerationService = questGenerationService
+        self.logger = logger
+        self.analytics = analytics
         
+        logger?.info("QuestViewModel initializing", category: .quest)
         setupSubscriptions()
         loadQuests()
         loadActiveQuest()
@@ -47,6 +62,14 @@ class QuestViewModel: ObservableObject {
     }
     
     func startQuest(_ quest: Quest) {
+        logger?.info("Starting quest: \(quest.title)", category: .quest)
+        analytics?.trackGameAction(.questStarted, parameters: [
+            "quest_title": quest.title,
+            "quest_distance": quest.totalDistance,
+            "quest_xp_reward": quest.rewardXP,
+            "player_level": playerViewModel.player.level
+        ])
+        
         var updatedQuest = quest
         updatedQuest.currentProgress = 0
         updatedQuest.isCompleted = false
@@ -57,6 +80,9 @@ class QuestViewModel: ObservableObject {
         // Trigger quest beginning epic moment
         triggerQuestEpicMoment(.questBegin(quest.title))
         
+        // Announce quest start for accessibility
+        AccessibilityHelpers.announce("Quest started: \(quest.title)")
+        
         saveActiveQuest()
         saveQuests()
     }
@@ -64,8 +90,24 @@ class QuestViewModel: ObservableObject {
     func completeQuest() {
         guard let quest = activeQuest else { return }
         
+        logger?.info("Completing quest: \(quest.title)", category: .quest)
+        analytics?.trackGameAction(.questCompleted, parameters: [
+            "quest_title": quest.title,
+            "quest_distance": quest.totalDistance,
+            "quest_xp_reward": quest.rewardXP,
+            "quest_gold_reward": quest.rewardGold,
+            "player_level": playerViewModel.player.level
+        ])
+        
         // Trigger quest completion epic moment
         triggerQuestEpicMoment(.questComplete(quest.title))
+        
+        // Announce quest completion for accessibility
+        AccessibilityHelpers.announceQuestCompletion(
+            questTitle: quest.title,
+            xpReward: quest.rewardXP,
+            goldReward: quest.rewardGold
+        )
         
         let questLog = QuestLog(
             questId: quest.id,
@@ -88,6 +130,13 @@ class QuestViewModel: ObservableObject {
     func cancelQuest() {
         guard let quest = activeQuest else { return }
         
+        logger?.info("Cancelling quest: \(quest.title)", category: .quest)
+        analytics?.trackGameAction(.questCancelled, parameters: [
+            "quest_title": quest.title,
+            "progress_when_cancelled": quest.currentProgress / quest.totalDistance,
+            "player_level": playerViewModel.player.level
+        ])
+        
         var restoredQuest = quest
         restoredQuest.currentProgress = 0
         restoredQuest.isCompleted = false
@@ -102,126 +151,95 @@ class QuestViewModel: ObservableObject {
     private func updateQuestProgress(with healthData: HealthData) {
         guard var quest = activeQuest else { return }
         
-        let stepsToDistance = calculateStepsToDistance(healthData.steps)
-        let classModifier = getClassDistanceModifier()
+        // Validate health data before processing
+        let healthValidationErrors = InputValidator.shared.validateHealthData(healthData)
+        if !healthValidationErrors.isEmpty {
+            let errorCollection = ValidationErrorCollection(healthValidationErrors)
+            ValidationLogger.shared.logValidationErrors(healthValidationErrors, context: .questProgressContext)
+            
+            // Log warning but continue with available data
+            if errorCollection.hasBlockingErrors {
+                logger?.error("Health data validation failed, skipping quest progress update: \(errorCollection.summaryMessage())", category: .quest)
+                return
+            }
+        }
         
-        quest.currentProgress = stepsToDistance * classModifier
+        let newProgress = QuestProgressCalculator.calculateProgress(
+            from: healthData,
+            for: playerViewModel.player.activeClass
+        )
         
-        if quest.currentProgress >= quest.totalDistance {
-            quest.currentProgress = quest.totalDistance
-            quest.isCompleted = true
-            activeQuest = quest
+        // Validate progress update before applying
+        let progressValidation = QuestProgressCalculator.validateProgressUpdate(
+            newProgress,
+            currentProgress: quest.currentProgress,
+            maxProgress: quest.totalDistance
+        )
+        
+        if !progressValidation.isValid {
+            logger?.warning("Quest progress validation failed: \(progressValidation.message ?? "Unknown error")", category: .quest)
+            return
+        }
+        
+        // Use the quest's safe update method with validation
+        let progressResult = quest.updateProgress(newProgress)
+        
+        if !progressResult.isValid {
+            logger?.warning("Quest progress update validation failed: \(progressResult.message ?? "Unknown error")", category: .quest)
+            // Continue with the old progress value
+            return
+        }
+        
+        // Update the active quest
+        activeQuest = quest
+        
+        // Check for completion
+        if quest.isCompleted {
+            logger?.info("Quest completed: \(quest.title)", category: .quest)
+            analytics?.trackEvent(AnalyticsEvent(name: "quest_completed", parameters: [
+                "quest_id": quest.id.uuidString,
+                "quest_title": quest.title,
+                "final_progress": quest.currentProgress
+            ]))
             
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 self.completeQuest()
             }
-        } else {
-            activeQuest = quest
         }
         
         saveActiveQuest()
     }
     
-    private func calculateStepsToDistance(_ steps: Int) -> Double {
-        return Double(steps) / 100.0
-    }
-    
-    private func getClassDistanceModifier() -> Double {
-        switch playerViewModel.player.activeClass {
-        case .rogue:
-            return 1.33
-        case .ranger:
-            return 1.15
-        case .warrior:
-            return 1.1
-        default:
-            return 1.0
-        }
-    }
+    // Progress calculation methods moved to QuestProgressCalculator utility
     
     private func generateInitialQuests() {
         if availableQuests.isEmpty {
-            availableQuests = generateFantasyQuests()
+            availableQuests = questGenerationService.generateInitialQuests()
             saveQuests()
         }
     }
     
-    private func generateFantasyQuests() -> [Quest] {
-        return [
-            Quest(
-                title: "The Whispering Woods",
-                description: "Ancient spirits call from the enchanted forest depths",
-                totalDistance: 50.0,
-                rewardXP: 100,
-                rewardGold: 25
-            ),
-            Quest(
-                title: "Merchant's Peril",
-                description: "Protect the sacred caravan from shadow creatures",
-                totalDistance: 75.0,
-                rewardXP: 150,
-                rewardGold: 40
-            ),
-            Quest(
-                title: "The Crimson Wyrm",
-                description: "Face the ancient dragon lord of the flame peaks",
-                totalDistance: 100.0,
-                rewardXP: 300,
-                rewardGold: 100
-            ),
-            Quest(
-                title: "Moonlit Sanctum",
-                description: "Explore the forgotten temple under starlight",
-                totalDistance: 60.0,
-                rewardXP: 120,
-                rewardGold: 30
-            )
-        ]
-    }
+    // Quest generation methods moved to QuestGenerationService
     
     private func generateNewQuests() {
         let playerLevel = playerViewModel.player.level
-        let questTemplates = getQuestTemplates(for: playerLevel)
-        
-        let newQuest = questTemplates.randomElement()!
-        availableQuests.append(newQuest)
+        let newQuests = questGenerationService.generateNewQuests(for: playerLevel, count: 1)
+        availableQuests.append(contentsOf: newQuests)
     }
     
-    private func getQuestTemplates(for level: Int) -> [Quest] {
-        let baseXP = 50 + (level * 25)
-        let baseGold = 10 + (level * 5)
-        let baseDistance = 25.0 + (Double(level) * 10.0)
-        
-        let questTemplates = [
-            ("The Sunken Crypts", "Delve into waterlogged tombs of forgotten kings"),
-            ("Shadowmere Crossing", "Navigate the treacherous bridge over dark waters"),
-            ("The Singing Stones", "Discover the melody that awakens ancient magic"),
-            ("Wraith's Hollow", "Banish the restless spirits from their cursed domain"),
-            ("The Crystal Caverns", "Harvest mystical gems from the living mountain"),
-            ("Phoenix Nesting Grounds", "Seek the legendary firebird's sacred feathers"),
-            ("The Starfall Crater", "Investigate the celestial impact site"),
-            ("Thornwood Labyrinth", "Navigate the ever-shifting maze of thorns")
-        ]
-        
-        return questTemplates.shuffled().prefix(3).map { template in
-            Quest(
-                title: template.0,
-                description: template.1,
-                totalDistance: baseDistance * Double.random(in: 0.8...1.5),
-                rewardXP: Int(Double(baseXP) * Double.random(in: 0.9...1.4)),
-                rewardGold: Int(Double(baseGold) * Double.random(in: 0.8...1.6))
-            )
-        }
-    }
+    // Quest template methods moved to QuestGenerationService
     
     private func loadQuests() {
         isLoading = true
+        logger?.info("Loading quest logs", category: .quest)
         
         Task {
             do {
                 completedQuests = try await persistenceService.loadQuestLogs()
+                logger?.info("Loaded \(completedQuests.count) completed quests", category: .quest)
             } catch {
-                print("Failed to load quest logs: \(error)")
+                logger?.error("Failed to load quest logs: \(error.localizedDescription)", category: .quest)
+                analytics?.trackError(error, context: "QuestViewModel.loadQuests")
             }
             
             isLoading = false
@@ -232,8 +250,10 @@ class QuestViewModel: ObservableObject {
         Task {
             do {
                 try await persistenceService.saveQuestLogs(completedQuests)
+                logger?.debug("Saved \(completedQuests.count) quest logs", category: .quest)
             } catch {
-                print("Failed to save quests: \(error)")
+                logger?.error("Failed to save quests: \(error.localizedDescription)", category: .quest)
+                analytics?.trackError(error, context: "QuestViewModel.saveQuests")
             }
         }
     }
@@ -243,9 +263,11 @@ class QuestViewModel: ObservableObject {
         
         Task {
             do {
-                try await persistenceService.saveActiveQuest(quest)
+                try await persistenceService.saveActiveQuest(quest, for: playerViewModel.player)
+                logger?.debug("Saved active quest: \(quest.title)", category: .quest)
             } catch {
-                print("Failed to save active quest: \(error)")
+                logger?.error("Failed to save active quest: \(error.localizedDescription)", category: .quest)
+                analytics?.trackError(error, context: "QuestViewModel.saveActiveQuest")
             }
         }
     }
@@ -253,9 +275,13 @@ class QuestViewModel: ObservableObject {
     private func loadActiveQuest() {
         Task {
             do {
-                activeQuest = try await persistenceService.loadActiveQuest()
+                activeQuest = try await persistenceService.loadActiveQuest(for: playerViewModel.player)
+                if let quest = activeQuest {
+                    logger?.info("Loaded active quest: \(quest.title)", category: .quest)
+                }
             } catch {
-                print("Failed to load active quest: \(error)")
+                logger?.error("Failed to load active quest: \(error.localizedDescription)", category: .quest)
+                analytics?.trackError(error, context: "QuestViewModel.loadActiveQuest")
             }
         }
     }
@@ -263,9 +289,11 @@ class QuestViewModel: ObservableObject {
     private func clearActiveQuest() {
         Task {
             do {
-                try await persistenceService.clearActiveQuest()
+                try await persistenceService.clearActiveQuest(for: playerViewModel.player)
+                logger?.debug("Cleared active quest", category: .quest)
             } catch {
-                print("Failed to clear active quest: \(error)")
+                logger?.error("Failed to clear active quest: \(error.localizedDescription)", category: .quest)
+                analytics?.trackError(error, context: "QuestViewModel.clearActiveQuest")
             }
         }
     }
@@ -273,240 +301,60 @@ class QuestViewModel: ObservableObject {
     // MARK: - Tutorial Quest Management
     
     func startTutorialQuest(for heroClass: HeroClass) {
-        tutorialQuest = createTutorialQuest(for: heroClass)
+        tutorialQuest = tutorialService.createTutorialQuest(for: heroClass)
         tutorialStage = .introduction
         tutorialProgress = 0.0
-        
-        // Set initial narrative
-        updateTutorialNarrative()
         
         // Start tutorial sequence
         progressTutorialStage()
     }
     
     func advanceTutorialQuest() {
-        switch tutorialStage {
-        case .notStarted:
-            tutorialStage = .introduction
-        case .introduction:
-            tutorialStage = .firstChallenge
-        case .firstChallenge:
-            tutorialStage = .encounter
-        case .encounter:
-            tutorialStage = .finalTest
-        case .finalTest:
-            tutorialStage = .completion
-        case .completion:
+        if tutorialStage == .completion {
             completeTutorialQuest()
+        } else {
+            tutorialStage = tutorialService.getNextStage(from: tutorialStage)
+            progressTutorialStage()
         }
-        
-        progressTutorialStage()
     }
     
-    private func createTutorialQuest(for heroClass: HeroClass) -> TutorialQuest {
-        let questData: (title: String, description: String, narrative: String) = {
-            switch heroClass {
-            case .warrior:
-                return (
-                    "Trial of the Stalwart Shield",
-                    "Prove your mettle in the warrior's proving grounds",
-                    "The ancient training grounds echo with the clash of steel. Your first trial awaits, young warrior."
-                )
-            case .mage:
-                return (
-                    "The Arcane Awakening",
-                    "Channel the mystical energies of the cosmos",
-                    "The ethereal planes shimmer with power. Feel the arcane forces respond to your will, apprentice."
-                )
-            case .rogue:
-                return (
-                    "Dance of Shadows",
-                    "Master the art of stealth and precision",
-                    "The shadows whisper secrets to those who know how to listen. Step lightly, young shadow-walker."
-                )
-            case .ranger:
-                return (
-                    "Call of the Wild",
-                    "Commune with nature's ancient wisdom",
-                    "The forest speaks in rustling leaves and flowing streams. Listen closely, child of the wild."
-                )
-            case .cleric:
-                return (
-                    "Light of Divine Grace",
-                    "Channel the sacred power of the divine",
-                    "Divine light flows through you like a gentle stream. Let your faith guide your first steps, chosen one."
-                )
-            }
-        }()
-        
-        return TutorialQuest(
-            title: questData.title,
-            description: questData.description,
-            narrative: questData.narrative,
-            heroClass: heroClass,
-            totalSteps: 5,
-            currentStep: 0
-        )
-    }
+    // Tutorial quest creation moved to TutorialService
     
     private func progressTutorialStage() {
         updateTutorialProgress()
         updateTutorialNarrative()
-        createTutorialDialogue()
+        updateTutorialDialogue()
         
         if tutorialStage == .encounter {
-            createTutorialEncounter()
+            updateTutorialEncounter()
         }
         
         triggerTutorialEffects()
     }
     
     private func updateTutorialProgress() {
-        let stageProgress: Double = {
-            switch tutorialStage {
-            case .notStarted: return 0.0
-            case .introduction: return 0.2
-            case .firstChallenge: return 0.4
-            case .encounter: return 0.6
-            case .finalTest: return 0.8
-            case .completion: return 1.0
-            }
-        }()
-        
-        tutorialProgress = stageProgress
+        tutorialProgress = tutorialService.getStageProgress(for: tutorialStage)
     }
     
     private func updateTutorialNarrative() {
         guard let quest = tutorialQuest else { return }
-        
-        let narratives: [TutorialStage: [HeroClass: String]] = [
-            .introduction: [
-                .warrior: "The training master nods approvingly as you grasp your weapon. 'Show me your resolve, warrior.'",
-                .mage: "Mystical runes begin to glow around you. The arcane energies recognize your potential.",
-                .rogue: "The shadows seem to bend toward you, as if welcoming a kindred spirit.",
-                .ranger: "A gentle breeze carries the scent of pine and earth. Nature acknowledges your presence.",
-                .cleric: "Warm light surrounds you like an embrace. The divine presence is unmistakable."
-            ],
-            .firstChallenge: [
-                .warrior: "Your first test: demonstrate your combat stance and defensive techniques.",
-                .mage: "Focus your mind and channel the flowing energies into a simple spell.",
-                .rogue: "Move silently through the shadows, unseen and unheard.",
-                .ranger: "Track the forest spirits through their natural domain.",
-                .cleric: "Heal this withered flower with your divine touch."
-            ],
-            .encounter: [
-                .warrior: "A spectral opponent appears, testing your combat skills in ethereal battle.",
-                .mage: "Magical constructs challenge your arcane mastery.",
-                .rogue: "Navigate the maze of shadows while avoiding detection.",
-                .ranger: "A wounded forest creature needs your aid.",
-                .cleric: "Dispel the dark curse that plagues this sacred grove."
-            ],
-            .finalTest: [
-                .warrior: "Face the final challenge: protect the innocent from spectral threats.",
-                .mage: "Weave complex magic to solve the ancient puzzle.",
-                .rogue: "Retrieve the sacred artifact without triggering the guardian wards.",
-                .ranger: "Restore balance to the disturbed ecosystem.",
-                .cleric: "Purify the corrupted shrine with your holy power."
-            ],
-            .completion: [
-                .warrior: "You have proven yourself worthy. Rise, true warrior of the realm.",
-                .mage: "The arcane mysteries bow before your growing power. Well done, mage.",
-                .rogue: "The shadows themselves applaud your skill. Welcome, master of stealth.",
-                .ranger: "Nature sings your praise. You are truly one with the wild.",
-                .cleric: "Divine light shines through you. You are blessed among the faithful."
-            ]
-        ]
-        
-        tutorialNarrative = narratives[tutorialStage]?[quest.heroClass] ?? "Your journey continues..."
+        tutorialNarrative = tutorialService.getNarrative(for: tutorialStage, heroClass: quest.heroClass)
     }
     
-    private func createTutorialDialogue() {
+    private func updateTutorialDialogue() {
         guard let quest = tutorialQuest else { return }
-        
-        let dialogues: [TutorialStage: TutorialDialogue] = [
-            .introduction: TutorialDialogue(
-                speaker: "Training Master",
-                text: "Welcome, \(quest.heroClass.rawValue.capitalized). Your trial begins now.",
-                options: ["I am ready", "Tell me more about the trial"]
-            ),
-            .firstChallenge: TutorialDialogue(
-                speaker: "Mentor",
-                text: "Show me what you've learned. Execute your first technique.",
-                options: ["Demonstrate skill", "Ask for guidance"]
-            ),
-            .encounter: TutorialDialogue(
-                speaker: "Spectral Guardian",
-                text: "Face me in combat, young \(quest.heroClass.rawValue)!",
-                options: ["Accept the challenge", "Attempt to negotiate"]
-            ),
-            .finalTest: TutorialDialogue(
-                speaker: "Ancient Voice",
-                text: "One final test remains. Prove your mastery.",
-                options: ["I accept", "I need more preparation"]
-            ),
-            .completion: TutorialDialogue(
-                speaker: "Realm Guardian",
-                text: "You have exceeded expectations. Your legend begins today.",
-                options: ["I am honored", "What comes next?"]
-            )
-        ]
-        
-        tutorialDialogue = dialogues[tutorialStage]
+        tutorialDialogue = tutorialService.getDialogue(for: tutorialStage, heroClass: quest.heroClass)
     }
     
-    private func createTutorialEncounter() {
+    private func updateTutorialEncounter() {
         guard let quest = tutorialQuest else { return }
-        
-        let encounters: [HeroClass: TutorialEncounter] = [
-            .warrior: TutorialEncounter(
-                type: .combat,
-                title: "Spectral Duelist",
-                description: "A ghostly warrior challenges you to honorable combat.",
-                difficulty: .easy,
-                successMessage: "Your blade strikes true! The spectral warrior nods in respect.",
-                failureMessage: "The spirit's blade finds its mark, but this is only training."
-            ),
-            .mage: TutorialEncounter(
-                type: .puzzle,
-                title: "Arcane Codex",
-                description: "Decipher the magical runes to unlock ancient knowledge.",
-                difficulty: .medium,
-                successMessage: "The runes blaze with power as you solve the puzzle!",
-                failureMessage: "The magic resists your attempts, but you're learning."
-            ),
-            .rogue: TutorialEncounter(
-                type: .stealth,
-                title: "Shadow Maze",
-                description: "Navigate the shifting shadows without detection.",
-                difficulty: .medium,
-                successMessage: "You move like a whisper through the darkness.",
-                failureMessage: "The shadows reveal your presence, but you adapt quickly."
-            ),
-            .ranger: TutorialEncounter(
-                type: .nature,
-                title: "Wounded Stag",
-                description: "A majestic deer needs your help to heal its injuries.",
-                difficulty: .easy,
-                successMessage: "The stag's wounds close under your gentle care.",
-                failureMessage: "Your first attempt fails, but the creature trusts you to try again."
-            ),
-            .cleric: TutorialEncounter(
-                type: .healing,
-                title: "Cursed Grove",
-                description: "Dark magic has corrupted this sacred place.",
-                difficulty: .medium,
-                successMessage: "Divine light cleanses the corruption from the land.",
-                failureMessage: "The darkness resists, but your faith remains strong."
-            )
-        ]
-        
-        tutorialEncounter = encounters[quest.heroClass]
+        tutorialEncounter = tutorialService.getEncounter(for: quest.heroClass)
     }
     
     private func triggerTutorialEffects() {
         isShowingTutorialEffects = true
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + WQC.UI.tutorialEffectsDuration) {
             self.isShowingTutorialEffects = false
         }
     }
@@ -515,12 +363,7 @@ class QuestViewModel: ObservableObject {
         guard let quest = tutorialQuest else { return }
         
         // Award tutorial rewards
-        tutorialRewards = TutorialRewards(
-            xp: 50,
-            gold: 10,
-            item: generateTutorialRewardItem(for: quest.heroClass),
-            title: "\(quest.heroClass.rawValue.capitalized) Initiate"
-        )
+        tutorialRewards = tutorialService.createRewards(for: quest.heroClass)
         
         // Trigger completion effects
         triggerQuestEpicMoment(.tutorialComplete)
@@ -529,17 +372,7 @@ class QuestViewModel: ObservableObject {
         tutorialStage = .completion
     }
     
-    private func generateTutorialRewardItem(for heroClass: HeroClass) -> String {
-        let items: [HeroClass: String] = [
-            .warrior: "Apprentice's Sword",
-            .mage: "Novice's Wand",
-            .rogue: "Shadow Cloak",
-            .ranger: "Hunter's Bow",
-            .cleric: "Sacred Amulet"
-        ]
-        
-        return items[heroClass] ?? "Training Gear"
-    }
+    // Tutorial reward generation moved to TutorialService
     
     func resetTutorialQuest() {
         tutorialQuest = nil
@@ -569,64 +402,4 @@ class QuestViewModel: ObservableObject {
     }
 }
 
-// MARK: - Tutorial Supporting Types
-
-struct TutorialQuest {
-    let title: String
-    let description: String
-    let narrative: String
-    let heroClass: HeroClass
-    let totalSteps: Int
-    var currentStep: Int
-}
-
-enum TutorialStage {
-    case notStarted
-    case introduction
-    case firstChallenge
-    case encounter
-    case finalTest
-    case completion
-}
-
-struct TutorialDialogue {
-    let speaker: String
-    let text: String
-    let options: [String]
-}
-
-struct TutorialEncounter {
-    let type: TutorialEncounterType
-    let title: String
-    let description: String
-    let difficulty: TutorialDifficulty
-    let successMessage: String
-    let failureMessage: String
-}
-
-enum TutorialEncounterType {
-    case combat
-    case puzzle
-    case stealth
-    case nature
-    case healing
-}
-
-enum TutorialDifficulty {
-    case easy
-    case medium
-    case hard
-}
-
-struct TutorialRewards {
-    var xp: Int = 0
-    var gold: Int = 0
-    var item: String = ""
-    var title: String = ""
-}
-
-enum QuestEpicMoment {
-    case questBegin(String)
-    case questComplete(String)
-    case tutorialComplete
-}
+// MARK: - Tutorial Supporting Types moved to Models/Tutorial/TutorialModels.swift

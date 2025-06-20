@@ -1,33 +1,274 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="22757" systemVersion="23F79" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithSwiftData="YES" userDefinedModelVersionIdentifier="">
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="22757" systemVersion="23F79" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithSwiftData="YES" userDefinedModelVersionIdentifier="2.0">
     <entity name="PlayerEntity" representedClassName="PlayerEntity" syncable="YES" codeGenerationType="class">
-        <attribute name="activeClass" optional="YES" attributeType="String"/>
-        <attribute name="gold" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
-        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
-        <attribute name="level" optional="YES" attributeType="Integer 32" defaultValueString="1" usesScalarValueType="YES"/>
-        <attribute name="name" optional="YES" attributeType="String"/>
-        <attribute name="stepsToday" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
-        <attribute name="xp" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="activeClass" optional="NO" attributeType="String">
+            <userInfo>
+                <entry key="validation.required" value="true"/>
+                <entry key="validation.allowedValues" value="warrior,mage,rogue,ranger,cleric"/>
+            </userInfo>
+        </attribute>
+        <attribute name="gold" optional="NO" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES">
+            <userInfo>
+                <entry key="validation.minValue" value="0"/>
+            </userInfo>
+        </attribute>
+        <attribute name="id" optional="NO" attributeType="UUID" usesScalarValueType="NO">
+            <userInfo>
+                <entry key="validation.required" value="true"/>
+            </userInfo>
+        </attribute>
+        <attribute name="level" optional="NO" attributeType="Integer 32" defaultValueString="1" usesScalarValueType="YES">
+            <userInfo>
+                <entry key="validation.minValue" value="1"/>
+                <entry key="validation.maxValue" value="100"/>
+            </userInfo>
+        </attribute>
+        <attribute name="name" optional="NO" attributeType="String">
+            <userInfo>
+                <entry key="validation.minLength" value="1"/>
+                <entry key="validation.maxLength" value="20"/>
+                <entry key="validation.required" value="true"/>
+            </userInfo>
+        </attribute>
+        <attribute name="stepsToday" optional="NO" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES">
+            <userInfo>
+                <entry key="validation.minValue" value="0"/>
+            </userInfo>
+        </attribute>
+        <attribute name="xp" optional="NO" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES">
+            <userInfo>
+                <entry key="validation.minValue" value="0"/>
+            </userInfo>
+        </attribute>
+        <relationship name="activeQuest" optional="YES" maxCount="1" deletionRule="Cascade" destinationEntity="ActiveQuestEntity" inverseName="player" inverseEntity="ActiveQuestEntity"/>
+        <relationship name="gameSessions" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="GameSessionEntity" inverseName="player" inverseEntity="GameSessionEntity"/>
+        <relationship name="healthData" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="HealthDataEntity" inverseName="player" inverseEntity="HealthDataEntity"/>
+        <relationship name="inventory" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="InventoryItemEntity" inverseName="player" inverseEntity="InventoryItemEntity"/>
+        <relationship name="questLogs" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="QuestLogEntity" inverseName="player" inverseEntity="QuestLogEntity"/>
+        <fetchIndex name="byIdIndex">
+            <fetchIndexElement property="id" type="Binary" order="ascending"/>
+        </fetchIndex>
     </entity>
     <entity name="ActiveQuestEntity" representedClassName="ActiveQuestEntity" syncable="YES" codeGenerationType="class">
-        <attribute name="currentProgress" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
-        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
-        <attribute name="isCompleted" optional="YES" attributeType="Boolean" usesScalarValueType="YES"/>
-        <attribute name="questDescription" optional="YES" attributeType="String"/>
-        <attribute name="questId" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
-        <attribute name="rewardGold" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
-        <attribute name="rewardXP" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="currentProgress" optional="NO" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES">
+            <userInfo>
+                <entry key="validation.minValue" value="0"/>
+            </userInfo>
+        </attribute>
+        <attribute name="id" optional="NO" attributeType="UUID" usesScalarValueType="NO">
+            <userInfo>
+                <entry key="validation.required" value="true"/>
+            </userInfo>
+        </attribute>
+        <attribute name="isCompleted" optional="NO" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="questDescription" optional="YES" attributeType="String">
+            <userInfo>
+                <entry key="validation.maxLength" value="500"/>
+            </userInfo>
+        </attribute>
+        <attribute name="questId" optional="NO" attributeType="UUID" usesScalarValueType="NO">
+            <userInfo>
+                <entry key="validation.required" value="true"/>
+            </userInfo>
+        </attribute>
+        <attribute name="rewardGold" optional="NO" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES">
+            <userInfo>
+                <entry key="validation.minValue" value="0"/>
+            </userInfo>
+        </attribute>
+        <attribute name="rewardXP" optional="NO" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES">
+            <userInfo>
+                <entry key="validation.minValue" value="0"/>
+            </userInfo>
+        </attribute>
         <attribute name="startDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
-        <attribute name="title" optional="YES" attributeType="String"/>
-        <attribute name="totalDistance" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
+        <attribute name="title" optional="NO" attributeType="String">
+            <userInfo>
+                <entry key="validation.minLength" value="1"/>
+                <entry key="validation.maxLength" value="100"/>
+                <entry key="validation.required" value="true"/>
+            </userInfo>
+        </attribute>
+        <attribute name="totalDistance" optional="NO" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES">
+            <userInfo>
+                <entry key="validation.minValue" value="0.1"/>
+            </userInfo>
+        </attribute>
+        <relationship name="player" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="PlayerEntity" inverseName="activeQuest" inverseEntity="PlayerEntity"/>
+        <fetchIndex name="byPlayerIndex">
+            <fetchIndexElement property="player" type="Binary" order="ascending"/>
+        </fetchIndex>
     </entity>
     <entity name="QuestLogEntity" representedClassName="QuestLogEntity" syncable="YES" codeGenerationType="class">
-        <attribute name="completionDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
-        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
-        <attribute name="questId" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
-        <attribute name="questName" optional="YES" attributeType="String"/>
-        <attribute name="rewardGold" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
-        <attribute name="rewardXP" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
-        <attribute name="summary" optional="YES" attributeType="String"/>
+        <attribute name="completionDate" optional="NO" attributeType="Date" usesScalarValueType="NO">
+            <userInfo>
+                <entry key="validation.required" value="true"/>
+            </userInfo>
+        </attribute>
+        <attribute name="id" optional="NO" attributeType="UUID" usesScalarValueType="NO">
+            <userInfo>
+                <entry key="validation.required" value="true"/>
+            </userInfo>
+        </attribute>
+        <attribute name="questId" optional="NO" attributeType="UUID" usesScalarValueType="NO">
+            <userInfo>
+                <entry key="validation.required" value="true"/>
+            </userInfo>
+        </attribute>
+        <attribute name="questName" optional="NO" attributeType="String">
+            <userInfo>
+                <entry key="validation.minLength" value="1"/>
+                <entry key="validation.maxLength" value="100"/>
+                <entry key="validation.required" value="true"/>
+            </userInfo>
+        </attribute>
+        <attribute name="rewardGold" optional="NO" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES">
+            <userInfo>
+                <entry key="validation.minValue" value="0"/>
+            </userInfo>
+        </attribute>
+        <attribute name="rewardXP" optional="NO" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES">
+            <userInfo>
+                <entry key="validation.minValue" value="0"/>
+            </userInfo>
+        </attribute>
+        <attribute name="summary" optional="YES" attributeType="String">
+            <userInfo>
+                <entry key="validation.maxLength" value="500"/>
+            </userInfo>
+        </attribute>
+        <relationship name="player" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="PlayerEntity" inverseName="questLogs" inverseEntity="PlayerEntity"/>
+        <fetchIndex name="byCompletionDateIndex">
+            <fetchIndexElement property="completionDate" type="Binary" order="descending"/>
+        </fetchIndex>
+        <fetchIndex name="byPlayerIndex">
+            <fetchIndexElement property="player" type="Binary" order="ascending"/>
+        </fetchIndex>
+    </entity>
+    <entity name="InventoryItemEntity" representedClassName="InventoryItemEntity" syncable="YES" codeGenerationType="class">
+        <attribute name="id" optional="NO" attributeType="UUID" usesScalarValueType="NO">
+            <userInfo>
+                <entry key="validation.required" value="true"/>
+            </userInfo>
+        </attribute>
+        <attribute name="itemId" optional="NO" attributeType="UUID" usesScalarValueType="NO">
+            <userInfo>
+                <entry key="validation.required" value="true"/>
+            </userInfo>
+        </attribute>
+        <attribute name="itemLevel" optional="NO" attributeType="Integer 32" defaultValueString="1" usesScalarValueType="YES">
+            <userInfo>
+                <entry key="validation.minValue" value="1"/>
+                <entry key="validation.maxValue" value="100"/>
+            </userInfo>
+        </attribute>
+        <attribute name="itemName" optional="NO" attributeType="String">
+            <userInfo>
+                <entry key="validation.minLength" value="1"/>
+                <entry key="validation.maxLength" value="50"/>
+                <entry key="validation.required" value="true"/>
+            </userInfo>
+        </attribute>
+        <attribute name="itemRarity" optional="NO" attributeType="String">
+            <userInfo>
+                <entry key="validation.required" value="true"/>
+                <entry key="validation.allowedValues" value="common,uncommon,rare,epic,legendary"/>
+            </userInfo>
+        </attribute>
+        <attribute name="itemType" optional="NO" attributeType="String">
+            <userInfo>
+                <entry key="validation.required" value="true"/>
+                <entry key="validation.allowedValues" value="weapon,armor,trinket,potion,misc"/>
+            </userInfo>
+        </attribute>
+        <attribute name="quantity" optional="NO" attributeType="Integer 32" defaultValueString="1" usesScalarValueType="YES">
+            <userInfo>
+                <entry key="validation.minValue" value="1"/>
+                <entry key="validation.maxValue" value="999"/>
+            </userInfo>
+        </attribute>
+        <relationship name="player" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="PlayerEntity" inverseName="inventory" inverseEntity="PlayerEntity"/>
+        <fetchIndex name="byPlayerIndex">
+            <fetchIndexElement property="player" type="Binary" order="ascending"/>
+        </fetchIndex>
+        <fetchIndex name="byItemTypeIndex">
+            <fetchIndexElement property="itemType" type="Binary" order="ascending"/>
+        </fetchIndex>
+    </entity>
+    <entity name="HealthDataEntity" representedClassName="HealthDataEntity" syncable="YES" codeGenerationType="class">
+        <attribute name="exerciseMinutes" optional="NO" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES">
+            <userInfo>
+                <entry key="validation.minValue" value="0"/>
+                <entry key="validation.maxValue" value="1440"/>
+            </userInfo>
+        </attribute>
+        <attribute name="heartRate" optional="NO" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES">
+            <userInfo>
+                <entry key="validation.minValue" value="0"/>
+                <entry key="validation.maxValue" value="250"/>
+            </userInfo>
+        </attribute>
+        <attribute name="id" optional="NO" attributeType="UUID" usesScalarValueType="NO">
+            <userInfo>
+                <entry key="validation.required" value="true"/>
+            </userInfo>
+        </attribute>
+        <attribute name="mindfulMinutes" optional="NO" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES">
+            <userInfo>
+                <entry key="validation.minValue" value="0"/>
+                <entry key="validation.maxValue" value="1440"/>
+            </userInfo>
+        </attribute>
+        <attribute name="recordDate" optional="NO" attributeType="Date" usesScalarValueType="NO">
+            <userInfo>
+                <entry key="validation.required" value="true"/>
+            </userInfo>
+        </attribute>
+        <attribute name="standingHours" optional="NO" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES">
+            <userInfo>
+                <entry key="validation.minValue" value="0"/>
+                <entry key="validation.maxValue" value="24"/>
+            </userInfo>
+        </attribute>
+        <attribute name="steps" optional="NO" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES">
+            <userInfo>
+                <entry key="validation.minValue" value="0"/>
+                <entry key="validation.maxValue" value="100000"/>
+            </userInfo>
+        </attribute>
+        <relationship name="player" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="PlayerEntity" inverseName="healthData" inverseEntity="PlayerEntity"/>
+        <fetchIndex name="byRecordDateIndex">
+            <fetchIndexElement property="recordDate" type="Binary" order="descending"/>
+        </fetchIndex>
+        <fetchIndex name="byPlayerAndDateIndex">
+            <fetchIndexElement property="player" type="Binary" order="ascending"/>
+            <fetchIndexElement property="recordDate" type="Binary" order="descending"/>
+        </fetchIndex>
+    </entity>
+    <entity name="GameSessionEntity" representedClassName="GameSessionEntity" syncable="YES" codeGenerationType="class">
+        <attribute name="endTime" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="id" optional="NO" attributeType="UUID" usesScalarValueType="NO">
+            <userInfo>
+                <entry key="validation.required" value="true"/>
+            </userInfo>
+        </attribute>
+        <attribute name="sessionType" optional="NO" attributeType="String">
+            <userInfo>
+                <entry key="validation.required" value="true"/>
+                <entry key="validation.allowedValues" value="onboarding,quest,settings,inventory,character,stats"/>
+            </userInfo>
+        </attribute>
+        <attribute name="startTime" optional="NO" attributeType="Date" usesScalarValueType="NO">
+            <userInfo>
+                <entry key="validation.required" value="true"/>
+            </userInfo>
+        </attribute>
+        <relationship name="player" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="PlayerEntity" inverseName="gameSessions" inverseEntity="PlayerEntity"/>
+        <fetchIndex name="byPlayerIndex">
+            <fetchIndexElement property="player" type="Binary" order="ascending"/>
+        </fetchIndex>
+        <fetchIndex name="byStartTimeIndex">
+            <fetchIndexElement property="startTime" type="Binary" order="descending"/>
+        </fetchIndex>
     </entity>
 </model>

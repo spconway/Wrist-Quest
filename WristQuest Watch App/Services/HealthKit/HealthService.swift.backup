@@ -1,0 +1,482 @@
+import Foundation
+import HealthKit
+import Combine
+
+protocol HealthServiceProtocol {
+    var healthDataPublisher: AnyPublisher<HealthData, Never> { get }
+    var authorizationStatusPublisher: AnyPublisher<HealthAuthorizationStatus, Never> { get }
+    var errorPublisher: AnyPublisher<WQError, Never> { get }
+    
+    func requestAuthorization() async throws
+    func checkAuthorizationStatus() async -> HealthAuthorizationStatus
+    func startMonitoring() async throws
+    func stopMonitoring()
+    func isHealthDataAvailable() -> Bool
+}
+
+class HealthService: HealthServiceProtocol {
+    private let healthStore = HKHealthStore()
+    private let healthDataSubject = CurrentValueSubject<HealthData, Never>(HealthData())
+    private let authStatusSubject = CurrentValueSubject<HealthAuthorizationStatus, Never>(.notDetermined)
+    private let errorSubject = PassthroughSubject<WQError, Never>()
+    
+    private var queries: [HKQuery] = []
+    private var workoutSession: HKWorkoutSession?
+    private let logger: LoggingServiceProtocol?
+    private let analytics: AnalyticsServiceProtocol?
+    
+    // Error handling state
+    private var queryRetryCount: [String: Int] = [:]
+    private let maxRetryAttempts = 3
+    private let retryDelay: TimeInterval = 2.0
+    
+    var healthDataPublisher: AnyPublisher<HealthData, Never> {
+        healthDataSubject.eraseToAnyPublisher()
+    }
+    
+    var authorizationStatusPublisher: AnyPublisher<HealthAuthorizationStatus, Never> {
+        authStatusSubject.eraseToAnyPublisher()
+    }
+    
+    var errorPublisher: AnyPublisher<WQError, Never> {
+        errorSubject.eraseToAnyPublisher()
+    }
+    
+    init(logger: LoggingServiceProtocol? = nil, analytics: AnalyticsServiceProtocol? = nil) {
+        self.logger = logger
+        self.analytics = analytics
+        
+        logger?.info("HealthService initializing", category: .health)
+        checkInitialAuthorizationStatus()
+    }
+    
+    convenience init() {
+        let config = DIConfiguration.shared
+        self.init(
+            logger: config.resolveLoggingService(),
+            analytics: config.resolveAnalyticsService()
+        )
+    }
+    
+    func requestAuthorization() async throws {
+        logger?.info("Requesting health authorization", category: .health)
+        
+        guard HKHealthStore.isHealthDataAvailable() else {
+            let error = WQError.healthKit(.healthDataNotAvailable)
+            handleError(error)
+            throw error
+        }
+        
+        let typesToRead: Set<HKObjectType> = [
+            HKObjectType.quantityType(forIdentifier: .stepCount)!,
+            HKObjectType.quantityType(forIdentifier: .heartRate)!,
+            HKObjectType.quantityType(forIdentifier: .appleExerciseTime)!,
+            HKObjectType.quantityType(forIdentifier: .appleStandTime)!,
+            HKObjectType.categoryType(forIdentifier: .mindfulSession)!
+        ]
+        
+        do {
+            try await healthStore.requestAuthorization(toShare: Set<HKSampleType>(), read: typesToRead)
+            logger?.info("Health authorization request completed", category: .health)
+            analytics?.trackCustomEvent("health_authorization_requested", parameters: nil)
+            
+            await updateAuthorizationStatus()
+            
+            // Check if we actually got permission
+            let status = await checkAuthorizationStatus()
+            if status == .denied {
+                let error = WQError.healthKit(.authorizationDenied)
+                handleError(error)
+                throw error
+            }
+        } catch let error as WQError {
+            throw error
+        } catch {
+            let wqError = WQError.healthKit(.queryFailed(error.localizedDescription))
+            handleError(wqError)
+            throw wqError
+        }
+    }
+    
+    func checkAuthorizationStatus() async -> HealthAuthorizationStatus {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            return .restricted
+        }
+        
+        let stepCountType = HKObjectType.quantityType(forIdentifier: .stepCount)!
+        let authStatus = healthStore.authorizationStatus(for: stepCountType)
+        
+        let status: HealthAuthorizationStatus
+        switch authStatus {
+        case .notDetermined:
+            status = .notDetermined
+        case .sharingDenied:
+            status = .denied
+        case .sharingAuthorized:
+            status = .authorized
+        @unknown default:
+            status = .notDetermined
+        }
+        
+        await MainActor.run {
+            authStatusSubject.send(status)
+        }
+        
+        return status
+    }
+    
+    func startMonitoring() async throws {
+        logger?.info("Starting health monitoring", category: .health)
+        
+        let authStatus = await checkAuthorizationStatus()
+        guard authStatus == .authorized else {
+            let error = WQError.healthKit(.permissionRequired)
+            handleError(error)
+            throw error
+        }
+        
+        do {
+            try await startStepCountMonitoring()
+            try await startHeartRateMonitoring()
+            try await startExerciseTimeMonitoring()
+            try await startStandTimeMonitoring()
+            try await startMindfulnessMonitoring()
+            
+            logger?.info("Health monitoring started successfully", category: .health)
+            analytics?.trackCustomEvent("health_monitoring_started", parameters: nil)
+        } catch {
+            let wqError = WQError.healthKit(.backgroundQueryFailed)
+            handleError(wqError)
+            throw wqError
+        }
+    }
+    
+    func isHealthDataAvailable() -> Bool {
+        return HKHealthStore.isHealthDataAvailable()
+    }
+    
+    func stopMonitoring() {
+        for query in queries {
+            healthStore.stop(query)
+        }
+        queries.removeAll()
+        workoutSession?.end()
+        logger?.info("Health monitoring stopped", category: .health)
+    }
+    
+    private func checkInitialAuthorizationStatus() {
+        Task {
+            await checkAuthorizationStatus()
+        }
+    }
+    
+    private func updateAuthorizationStatus() async {
+        let status = await checkAuthorizationStatus()
+        await MainActor.run {
+            authStatusSubject.send(status)
+        }
+    }
+    
+    private func startStepCountMonitoring() async throws {
+        guard let stepType = HKObjectType.quantityType(forIdentifier: .stepCount) else {
+            throw WQError.healthKit(.deviceNotSupported)
+        }
+        
+        let calendar = Calendar.current
+        let now = Date()
+        let startOfDay = calendar.startOfDay(for: now)
+        
+        let predicate = HKQuery.predicateForSamples(withStart: startOfDay, end: now, options: .strictStartDate)
+        
+        let query = HKStatisticsQuery(
+            quantityType: stepType,
+            quantitySamplePredicate: predicate,
+            options: .cumulativeSum
+        ) { [weak self] _, result, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                let wqError = WQError.healthKit(.queryFailed("Step count query: \(error.localizedDescription)"))
+                self.handleQueryError(wqError, queryType: "step_count_initial")
+                return
+            }
+            
+            let steps = result?.sumQuantity()?.doubleValue(for: HKUnit.count()) ?? 0
+            
+            Task { @MainActor in
+                var currentData = self.healthDataSubject.value
+                currentData.steps = Int(steps)
+                self.healthDataSubject.send(currentData)
+                self.logger?.debug("Step count updated: \(steps)", category: .health)
+            }
+        }
+        
+        healthStore.execute(query)
+        queries.append(query)
+        
+        let anchoredQuery = HKAnchoredObjectQuery(
+            type: stepType,
+            predicate: predicate,
+            anchor: nil,
+            limit: HKObjectQueryNoLimit
+        ) { [weak self] _, samples, _, _, error in
+            guard let self = self else { return }
+            self.handleStepCountUpdate(samples: samples, error: error)
+        }
+        
+        anchoredQuery.updateHandler = { [weak self] _, samples, _, _, error in
+            guard let self = self else { return }
+            self.handleStepCountUpdate(samples: samples, error: error)
+        }
+        
+        healthStore.execute(anchoredQuery)
+        queries.append(anchoredQuery)
+    }
+    
+    private func handleStepCountUpdate(samples: [HKSample]?, error: Error?) {
+        if let error = error {
+            let wqError = WQError.healthKit(.queryFailed("Step count update: \(error.localizedDescription)"))
+            handleQueryError(wqError, queryType: "step_count_update")
+            return
+        }
+        
+        guard let samples = samples as? [HKQuantitySample] else {
+            logger?.warning("Invalid sample type received in step count update", category: .health)
+            return
+        }
+        
+        let totalSteps = samples.reduce(0) { result, sample in
+            result + sample.quantity.doubleValue(for: HKUnit.count())
+        }
+        
+        Task { @MainActor in
+            var currentData = self.healthDataSubject.value
+            currentData.steps = Int(totalSteps)
+            self.healthDataSubject.send(currentData)
+            self.logger?.debug("Step count updated from samples: \(totalSteps)", category: .health)
+        }
+    }
+    
+    private func startHeartRateMonitoring() async throws {
+        guard let heartRateType = HKObjectType.quantityType(forIdentifier: .heartRate) else {
+            throw WQError.healthKit(.deviceNotSupported)
+        }
+        
+        let query = HKAnchoredObjectQuery(
+            type: heartRateType,
+            predicate: nil,
+            anchor: nil,
+            limit: 1
+        ) { [weak self] _, samples, _, _, error in
+            self?.handleHeartRateUpdate(samples: samples, error: error)
+        }
+        
+        query.updateHandler = { [weak self] _, samples, _, _, error in
+            self?.handleHeartRateUpdate(samples: samples, error: error)
+        }
+        
+        healthStore.execute(query)
+        queries.append(query)
+    }
+    
+    private func handleHeartRateUpdate(samples: [HKSample]?, error: Error?) {
+        if let error = error {
+            let wqError = WQError.healthKit(.queryFailed("Heart rate update: \(error.localizedDescription)"))
+            handleQueryError(wqError, queryType: "heart_rate_update")
+            return
+        }
+        
+        guard let samples = samples as? [HKQuantitySample],
+              let latestSample = samples.last else {
+            logger?.debug("No heart rate samples received", category: .health)
+            return
+        }
+        
+        let heartRate = latestSample.quantity.doubleValue(for: HKUnit(from: "count/min"))
+        
+        Task { @MainActor in
+            var currentData = self.healthDataSubject.value
+            currentData.heartRate = heartRate
+            self.healthDataSubject.send(currentData)
+            self.logger?.debug("Heart rate updated: \(heartRate) bpm", category: .health)
+        }
+    }
+    
+    private func startExerciseTimeMonitoring() async throws {
+        guard let exerciseType = HKObjectType.quantityType(forIdentifier: .appleExerciseTime) else {
+            throw WQError.healthKit(.deviceNotSupported)
+        }
+        
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: Date())
+        let predicate = HKQuery.predicateForSamples(withStart: startOfDay, end: Date(), options: .strictStartDate)
+        
+        let query = HKStatisticsQuery(
+            quantityType: exerciseType,
+            quantitySamplePredicate: predicate,
+            options: .cumulativeSum
+        ) { [weak self] _, result, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                let wqError = WQError.healthKit(.queryFailed("Exercise time query: \(error.localizedDescription)"))
+                self.handleQueryError(wqError, queryType: "exercise_time")
+                return
+            }
+            
+            let minutes = result?.sumQuantity()?.doubleValue(for: HKUnit.minute()) ?? 0
+            
+            Task { @MainActor in
+                var currentData = self.healthDataSubject.value
+                currentData.exerciseMinutes = Int(minutes)
+                self.healthDataSubject.send(currentData)
+                self.logger?.debug("Exercise time updated: \(minutes) minutes", category: .health)
+            }
+        }
+        
+        healthStore.execute(query)
+        queries.append(query)
+    }
+    
+    private func startStandTimeMonitoring() async throws {
+        guard let standType = HKObjectType.quantityType(forIdentifier: .appleStandTime) else {
+            throw WQError.healthKit(.deviceNotSupported)
+        }
+        
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: Date())
+        let predicate = HKQuery.predicateForSamples(withStart: startOfDay, end: Date(), options: .strictStartDate)
+        
+        let query = HKStatisticsQuery(
+            quantityType: standType,
+            quantitySamplePredicate: predicate,
+            options: .cumulativeSum
+        ) { [weak self] _, result, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                let wqError = WQError.healthKit(.queryFailed("Stand time query: \(error.localizedDescription)"))
+                self.handleQueryError(wqError, queryType: "stand_time")
+                return
+            }
+            
+            let hours = result?.sumQuantity()?.doubleValue(for: HKUnit.hour()) ?? 0
+            
+            Task { @MainActor in
+                var currentData = self.healthDataSubject.value
+                currentData.standingHours = Int(hours)
+                self.healthDataSubject.send(currentData)
+                self.logger?.debug("Stand time updated: \(hours) hours", category: .health)
+            }
+        }
+        
+        healthStore.execute(query)
+        queries.append(query)
+    }
+    
+    private func startMindfulnessMonitoring() async throws {
+        guard let mindfulType = HKObjectType.categoryType(forIdentifier: .mindfulSession) else {
+            throw WQError.healthKit(.deviceNotSupported)
+        }
+        
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: Date())
+        let predicate = HKQuery.predicateForSamples(withStart: startOfDay, end: Date(), options: .strictStartDate)
+        
+        let query = HKSampleQuery(
+            sampleType: mindfulType,
+            predicate: predicate,
+            limit: HKObjectQueryNoLimit,
+            sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)]
+        ) { [weak self] _, samples, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                let wqError = WQError.healthKit(.queryFailed("Mindfulness query: \(error.localizedDescription)"))
+                self.handleQueryError(wqError, queryType: "mindfulness")
+                return
+            }
+            
+            let totalMinutes = samples?.reduce(0) { result, sample in
+                let duration = sample.endDate.timeIntervalSince(sample.startDate)
+                return result + (duration / 60.0)
+            } ?? 0
+            
+            Task { @MainActor in
+                var currentData = self.healthDataSubject.value
+                currentData.mindfulMinutes = Int(totalMinutes)
+                self.healthDataSubject.send(currentData)
+                self.logger?.debug("Mindfulness time updated: \(totalMinutes) minutes", category: .health)
+            }
+        }
+        
+        healthStore.execute(query)
+        queries.append(query)
+    }
+    
+    // MARK: - Error Handling
+    
+    private func handleError(_ error: WQError) {
+        logger?.error("HealthService error: \(error.errorDescription ?? "Unknown")", category: .health)
+        analytics?.trackError(
+            NSError(domain: "HealthService", code: error.hashValue, userInfo: [
+                NSLocalizedDescriptionKey: error.errorDescription ?? "Unknown health error"
+            ]),
+            context: "HealthService.handleError"
+        )
+        
+        Task { @MainActor in
+            errorSubject.send(error)
+        }
+    }
+    
+    private func handleQueryError(_ error: WQError, queryType: String) {
+        let retryKey = "query_\(queryType)"
+        let currentRetries = queryRetryCount[retryKey, default: 0]
+        
+        if currentRetries < maxRetryAttempts {
+            queryRetryCount[retryKey] = currentRetries + 1
+            logger?.warning("Query \(queryType) failed, retrying (\(currentRetries + 1)/\(maxRetryAttempts))", category: .health)
+            
+            // Retry after delay
+            Task {
+                try? await Task.sleep(nanoseconds: UInt64(retryDelay * 1_000_000_000))
+                // The retry logic would be implemented here based on query type
+            }
+        } else {
+            queryRetryCount.removeValue(forKey: retryKey)
+            logger?.error("Query \(queryType) failed after max retries", category: .health)
+            handleError(error)
+        }
+    }
+}
+
+// MARK: - Legacy Error Support (for backward compatibility)
+
+enum HealthServiceError: Error, LocalizedError {
+    case healthDataNotAvailable
+    case authorizationDenied
+    case queryFailed(String)
+    
+    var errorDescription: String? {
+        switch self {
+        case .healthDataNotAvailable:
+            return "Health data is not available on this device"
+        case .authorizationDenied:
+            return "Health data access was denied"
+        case .queryFailed(let message):
+            return "Health query failed: \(message)"
+        }
+    }
+    
+    var wqError: WQError {
+        switch self {
+        case .healthDataNotAvailable:
+            return .healthKit(.healthDataNotAvailable)
+        case .authorizationDenied:
+            return .healthKit(.authorizationDenied)
+        case .queryFailed(let message):
+            return .healthKit(.queryFailed(message))
+        }
+    }
+}

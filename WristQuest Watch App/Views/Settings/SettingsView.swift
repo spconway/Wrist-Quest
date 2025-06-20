@@ -198,7 +198,7 @@ struct AccessibilitySettingsView: View {
     
     var body: some View {
         VStack(spacing: WQDesignSystem.Spacing.md) {
-            AccessibilityInfoRow(
+            SettingsInfoRow(
                 icon: "textformat.size",
                 title: "Text Size",
                 value: dynamicTypeSize.description,
@@ -207,7 +207,7 @@ struct AccessibilitySettingsView: View {
                 }
             )
             
-            AccessibilityInfoRow(
+            SettingsInfoRow(
                 icon: "motion.badge.minus",
                 title: "Reduce Motion",
                 value: reduceMotion ? "On" : "Off",
@@ -216,7 +216,7 @@ struct AccessibilitySettingsView: View {
                 }
             )
             
-            AccessibilityInfoRow(
+            SettingsInfoRow(
                 icon: "speaker.wave.3.fill",
                 title: "VoiceOver",
                 value: "Supported",
@@ -351,7 +351,7 @@ struct SettingToggleRow: View {
     }
 }
 
-struct AccessibilityInfoRow: View {
+struct SettingsInfoRow: View {
     let icon: String
     let title: String
     let value: String

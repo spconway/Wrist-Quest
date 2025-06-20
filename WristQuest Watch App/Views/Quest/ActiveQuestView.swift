@@ -1,5 +1,7 @@
 import SwiftUI
 
+// Note: WQConstants are accessed globally via WQC typealias
+
 struct ActiveQuestView: View {
     @StateObject private var questViewModel: QuestViewModel
     @EnvironmentObject private var navigationCoordinator: NavigationCoordinator
@@ -35,6 +37,8 @@ struct ActiveQuestView: View {
             }
             .padding(WQDesignSystem.Spacing.md)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(AccessibilityConstants.Quests.activeQuestTitle)
         .navigationTitle("Active Quest")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -44,6 +48,10 @@ struct ActiveQuestView: View {
                         showingCancelConfirmation = true
                     }
                     .foregroundColor(WQDesignSystem.Colors.error)
+                    .accessibleActionButton(
+                        actionName: AccessibilityConstants.Quests.cancelQuestButton,
+                        description: AccessibilityConstants.Quests.cancelQuestHint
+                    )
                 }
             }
         }
@@ -59,7 +67,12 @@ struct ActiveQuestView: View {
         }
         .onReceive(questViewModel.$activeQuest) { quest in
             if let quest = quest, quest.isCompleted {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                AccessibilityHelpers.announceQuestCompletion(
+                    questTitle: quest.title,
+                    xpReward: quest.rewardXP,
+                    goldReward: quest.rewardGold
+                )
+                DispatchQueue.main.asyncAfter(deadline: .now() + WQC.UI.questCompletionDelay) {
                     showingQuestComplete = true
                 }
             }
@@ -86,6 +99,7 @@ struct ActiveQuestProgressView: View {
                         .font(WQDesignSystem.Typography.title)
                         .foregroundColor(WQDesignSystem.Colors.primaryText)
                         .multilineTextAlignment(.center)
+                        .accessibilityAddTraits(.isHeader)
                     
                     Text("Quest in Progress")
                         .font(WQDesignSystem.Typography.caption)
@@ -94,13 +108,17 @@ struct ActiveQuestProgressView: View {
                         .padding(.vertical, WQDesignSystem.Spacing.xs)
                         .background(WQDesignSystem.Colors.accent.opacity(0.1))
                         .cornerRadius(WQDesignSystem.CornerRadius.sm)
+                        .accessibilityLabel(AccessibilityConstants.Quests.questInProgress)
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Active quest: \(quest.title), in progress")
                 
                 // Progress Circle
                 ZStack {
                     Circle()
-                        .stroke(WQDesignSystem.Colors.border, lineWidth: 8)
-                        .frame(width: 120, height: 120)
+                        .stroke(WQDesignSystem.Colors.border, lineWidth: WQC.UI.progressLineWidth)
+                        .frame(width: WQC.UI.progressCircleSize, height: WQC.UI.progressCircleSize)
+                        .accessibilityHidden(true)
                     
                     Circle()
                         .trim(from: 0, to: quest.progressPercentage)
@@ -112,9 +130,10 @@ struct ActiveQuestProgressView: View {
                             ),
                             style: StrokeStyle(lineWidth: 8, lineCap: .round)
                         )
-                        .frame(width: 120, height: 120)
+                        .frame(width: WQC.UI.progressCircleSize, height: WQC.UI.progressCircleSize)
                         .rotationEffect(.degrees(-90))
-                        .animation(.easeInOut(duration: 0.5), value: quest.progressPercentage)
+                        .accessibleAnimation(.easeInOut(duration: WQC.UI.questProgressAnimationDuration), value: quest.progressPercentage)
+                        .accessibilityHidden(true)
                     
                     VStack(spacing: WQDesignSystem.Spacing.xs) {
                         Text("\(Int(quest.progressPercentage * 100))%")
@@ -126,7 +145,14 @@ struct ActiveQuestProgressView: View {
                             .font(WQDesignSystem.Typography.footnote)
                             .foregroundColor(WQDesignSystem.Colors.secondaryText)
                     }
+                    .accessibilityHidden(true)
                 }
+                .wqProgressAccessible(
+                    type: .questProgress,
+                    current: quest.currentProgress,
+                    total: quest.totalDistance,
+                    unit: "miles"
+                )
                 
                 // Progress Details
                 VStack(spacing: WQDesignSystem.Spacing.sm) {
@@ -142,11 +168,19 @@ struct ActiveQuestProgressView: View {
                             .foregroundColor(WQDesignSystem.Colors.primaryText)
                             .fontWeight(.medium)
                     }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Distance progress: \(quest.currentProgress.formatted(decimalPlaces: 1)) of \(quest.totalDistance.formatted(decimalPlaces: 1)) miles")
                     
                     WQProgressBar(
                         progress: quest.progressPercentage,
                         color: WQDesignSystem.Colors.questBlue,
-                        height: 6
+                        height: WQC.UI.progressBarHeight
+                    )
+                    .wqProgressAccessible(
+                        type: .questProgress,
+                        current: quest.currentProgress,
+                        total: quest.totalDistance,
+                        unit: "miles"
                     )
                 }
                 
@@ -157,15 +191,35 @@ struct ActiveQuestProgressView: View {
                         value: "\(quest.rewardXP) XP",
                         color: WQDesignSystem.Colors.questGold
                     )
+                    .wqRewardAccessible(
+                        reward: WQRewardInfo(type: .experience, amount: quest.rewardXP)
+                    )
                     
                     RewardPreview(
                         icon: "dollarsign.circle.fill",
                         value: "\(quest.rewardGold) Gold",
                         color: WQDesignSystem.Colors.questGold
                     )
+                    .wqRewardAccessible(
+                        reward: WQRewardInfo(type: .gold, amount: quest.rewardGold)
+                    )
                 }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Quest rewards: \(quest.rewardXP) experience points and \(quest.rewardGold) gold")
             }
         }
+        .wqQuestAccessible(
+            quest: WQQuestAccessibilityInfo(
+                title: quest.title,
+                description: nil,
+                isActive: true,
+                isCompleted: false,
+                progress: quest.progressPercentage,
+                rewardXP: quest.rewardXP,
+                rewardGold: quest.rewardGold
+            ),
+            action: .view
+        )
     }
 }
 
@@ -200,6 +254,8 @@ struct ActivityTrackingView: View {
                 Text("Activity Tracking")
                     .font(WQDesignSystem.Typography.headline)
                     .foregroundColor(WQDesignSystem.Colors.primaryText)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityLabel(AccessibilityConstants.Health.activityTracking)
                 
                 LazyVGrid(columns: [
                     GridItem(.flexible()),
@@ -211,12 +267,21 @@ struct ActivityTrackingView: View {
                         value: "\(healthViewModel.currentHealthData.steps)",
                         color: WQDesignSystem.Colors.questBlue
                     )
+                    .wqHealthMetricAccessible(
+                        metric: .steps,
+                        value: AccessibilityConstants.Health.stepsValue(healthViewModel.currentHealthData.steps)
+                    )
                     
                     ActivityMetricView(
                         icon: "heart.fill",
                         title: "Heart Rate",
                         value: "\(Int(healthViewModel.currentHealthData.heartRate)) BPM",
                         color: WQDesignSystem.Colors.questRed
+                    )
+                    .wqHealthMetricAccessible(
+                        metric: .heartRate,
+                        value: AccessibilityConstants.Health.heartRateValue(Int(healthViewModel.currentHealthData.heartRate)),
+                        isActive: healthViewModel.isInCombatMode
                     )
                     
                     ActivityMetricView(
@@ -225,6 +290,10 @@ struct ActivityTrackingView: View {
                         value: "\(healthViewModel.currentHealthData.exerciseMinutes) min",
                         color: WQDesignSystem.Colors.questOrange
                     )
+                    .wqHealthMetricAccessible(
+                        metric: .exerciseMinutes,
+                        value: AccessibilityConstants.Health.exerciseMinutesValue(healthViewModel.currentHealthData.exerciseMinutes)
+                    )
                     
                     ActivityMetricView(
                         icon: "figure.stand",
@@ -232,7 +301,13 @@ struct ActivityTrackingView: View {
                         value: "\(healthViewModel.currentHealthData.standingHours)",
                         color: WQDesignSystem.Colors.questGreen
                     )
+                    .wqHealthMetricAccessible(
+                        metric: .standHours,
+                        value: AccessibilityConstants.Health.standHoursValue(healthViewModel.currentHealthData.standingHours)
+                    )
                 }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(AccessibilityConstants.Health.activitySummary)
             }
         }
     }
@@ -275,10 +350,13 @@ struct CombatModeIndicator: View {
                     Circle()
                         .fill(WQDesignSystem.Colors.questRed)
                         .frame(width: 40, height: 40)
+                        .accessibilityHidden(true)
                     
                     Image(systemName: "bolt.fill")
                         .font(.title3)
                         .foregroundColor(.white)
+                        .accessibilityLabel("Lightning bolt icon")
+                        .accessibilityHidden(true)
                 }
                 
                 VStack(alignment: .leading, spacing: WQDesignSystem.Spacing.xs) {
@@ -293,6 +371,18 @@ struct CombatModeIndicator: View {
                 
                 Spacer()
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(AccessibilityConstants.Health.combatModeActive)
+            .accessibilityValue(AccessibilityConstants.Health.combatModeDescription)
+            .accessibilityAddTraits(.startsMediaSession)
+        }
+        .wqHealthMetricAccessible(
+            metric: .combatMode,
+            value: "Active",
+            isActive: true
+        )
+        .onAppear {
+            AccessibilityHelpers.announceCombatMode()
         }
     }
 }
@@ -304,23 +394,33 @@ struct QuestTipsView: View {
                 Text("Quest Tips")
                     .font(WQDesignSystem.Typography.headline)
                     .foregroundColor(WQDesignSystem.Colors.primaryText)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityLabel(AccessibilityConstants.Tips.questTips)
                 
                 VStack(alignment: .leading, spacing: WQDesignSystem.Spacing.sm) {
                     TipRow(
                         icon: "figure.walk",
                         text: "Keep walking to progress your quest"
                     )
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(AccessibilityConstants.Tips.tip1)
                     
                     TipRow(
                         icon: "heart.fill",
                         text: "Elevated heart rate may trigger events"
                     )
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(AccessibilityConstants.Tips.tip2)
                     
                     TipRow(
                         icon: "applewatch",
                         text: "Check back periodically for updates"
                     )
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(AccessibilityConstants.Tips.tip3)
                 }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Helpful tips for quest completion")
             }
         }
     }
@@ -417,21 +517,32 @@ struct NoActiveQuestView: View {
             Image(systemName: "map")
                 .font(.system(size: 48))
                 .foregroundColor(WQDesignSystem.Colors.secondaryText)
+                .accessibilityLabel("Map icon")
+                .accessibilityHidden(true)
             
             VStack(spacing: WQDesignSystem.Spacing.sm) {
                 Text("No Active Quest")
                     .font(WQDesignSystem.Typography.headline)
                     .foregroundColor(WQDesignSystem.Colors.primaryText)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityLabel(AccessibilityConstants.Quests.noActiveQuestTitle)
                 
                 Text("Start a quest to begin your adventure!")
                     .font(WQDesignSystem.Typography.body)
                     .foregroundColor(WQDesignSystem.Colors.secondaryText)
                     .multilineTextAlignment(.center)
+                    .accessibilityLabel(AccessibilityConstants.Quests.noActiveQuestDescription)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(AccessibilityConstants.Quests.noActiveQuestTitle). \(AccessibilityConstants.Quests.noActiveQuestDescription)")
             
             WQButton("Browse Quests", icon: "arrow.right") {
                 navigationCoordinator.popToRoot()
             }
+            .accessibleActionButton(
+                actionName: AccessibilityConstants.Quests.browseQuestsButton,
+                description: AccessibilityConstants.Quests.browseQuestsHint
+            )
         }
         .padding(WQDesignSystem.Spacing.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

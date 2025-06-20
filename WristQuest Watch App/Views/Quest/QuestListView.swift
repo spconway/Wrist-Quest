@@ -15,6 +15,7 @@ struct QuestListView: View {
                 if questViewModel.isLoading {
                     WQLoadingView("Loading quests...")
                         .padding()
+                        .accessibilityLabel("Loading available quests. Please wait.")
                 } else if questViewModel.availableQuests.isEmpty {
                     NoQuestsView()
                 } else {
@@ -27,6 +28,8 @@ struct QuestListView: View {
             }
             .padding(WQDesignSystem.Spacing.md)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(AccessibilityConstants.Quests.availableQuestsTitle)
         .navigationTitle("Available Quests")
         .navigationBarTitleDisplayMode(.inline)
         .refreshable {
@@ -60,6 +63,7 @@ struct QuestRowView: View {
                         Image(systemName: "chevron.right")
                             .foregroundColor(WQDesignSystem.Colors.accent)
                             .font(.caption)
+                            .accessibilityHidden(true)
                     }
                     
                     Text(quest.description)
@@ -70,6 +74,7 @@ struct QuestRowView: View {
                     
                     Divider()
                         .background(WQDesignSystem.Colors.border)
+                        .accessibilityHidden(true)
                     
                     HStack {
                         QuestStatView(
@@ -78,6 +83,8 @@ struct QuestRowView: View {
                             value: "\(quest.totalDistance.formatted(decimalPlaces: 1)) mi",
                             color: WQDesignSystem.Colors.questBlue
                         )
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Distance: \(quest.totalDistance.formatted(decimalPlaces: 1)) miles")
                         
                         Spacer()
                         
@@ -86,6 +93,9 @@ struct QuestRowView: View {
                             label: "XP",
                             value: "\(quest.rewardXP)",
                             color: WQDesignSystem.Colors.questGold
+                        )
+                        .wqRewardAccessible(
+                            reward: WQRewardInfo(type: .experience, amount: quest.rewardXP)
                         )
                         
                         Spacer()
@@ -96,11 +106,28 @@ struct QuestRowView: View {
                             value: "\(quest.rewardGold)",
                             color: WQDesignSystem.Colors.questGold
                         )
+                        .wqRewardAccessible(
+                            reward: WQRewardInfo(type: .gold, amount: quest.rewardGold)
+                        )
                     }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel("Quest rewards: \(quest.totalDistance.formatted(decimalPlaces: 1)) miles distance, \(quest.rewardXP) experience points, \(quest.rewardGold) gold")
                 }
             }
         }
         .buttonStyle(PlainButtonStyle())
+        .wqQuestAccessible(
+            quest: WQQuestAccessibilityInfo(
+                title: quest.title,
+                description: quest.description,
+                isActive: false,
+                isCompleted: quest.isCompleted,
+                progress: quest.progressPercentage,
+                rewardXP: quest.rewardXP,
+                rewardGold: quest.rewardGold
+            ),
+            action: .view
+        )
     }
 }
 
@@ -115,6 +142,7 @@ struct QuestStatView: View {
             Image(systemName: icon)
                 .font(.caption)
                 .foregroundColor(color)
+                .accessibilityHidden(true)
             
             Text(value)
                 .font(WQDesignSystem.Typography.caption)
@@ -126,6 +154,8 @@ struct QuestStatView: View {
                 .foregroundColor(WQDesignSystem.Colors.secondaryText)
         }
         .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label): \(value)")
     }
 }
 
@@ -135,17 +165,22 @@ struct NoQuestsView: View {
             Image(systemName: "map")
                 .font(.system(size: 48))
                 .foregroundColor(WQDesignSystem.Colors.secondaryText)
+                .accessibilityLabel("Map icon")
+                .accessibilityHidden(true)
             
             VStack(spacing: WQDesignSystem.Spacing.sm) {
                 Text("No Quests Available")
                     .font(WQDesignSystem.Typography.headline)
                     .foregroundColor(WQDesignSystem.Colors.primaryText)
+                    .accessibilityAddTraits(.isHeader)
                 
                 Text("Complete your current quest to unlock new adventures!")
                     .font(WQDesignSystem.Typography.body)
                     .foregroundColor(WQDesignSystem.Colors.secondaryText)
                     .multilineTextAlignment(.center)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("No quests available. Complete your current quest to unlock new adventures.")
         }
         .padding(WQDesignSystem.Spacing.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

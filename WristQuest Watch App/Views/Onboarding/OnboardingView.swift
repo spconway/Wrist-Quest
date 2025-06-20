@@ -170,12 +170,16 @@ struct OnboardingView: View {
     private func completeOnboarding() {
         guard let selectedClass = selectedClass else { return }
         
-        let player = Player(
-            name: playerName.trimmingCharacters(in: .whitespacesAndNewlines),
-            activeClass: selectedClass
-        )
-        
-        gameViewModel.startGame(with: player)
+        do {
+            let player = try Player(
+                name: playerName.trimmingCharacters(in: .whitespacesAndNewlines),
+                activeClass: selectedClass
+            )
+            
+            gameViewModel.startGame(with: player)
+        } catch {
+            showError("Failed to create character: \(error.localizedDescription)")
+        }
     }
     
     private func showError(_ message: String) {
@@ -202,31 +206,68 @@ struct WelcomeStepView: View {
                         .font(.largeTitle)
                         .foregroundColor(WQDesignSystem.Colors.accent)
                         .scaleEffect(1.5)
+                        .accessibilityLabel("Apple Watch icon")
+                        .accessibilityHidden(true)
                     
                     Text("Wrist Quest")
                         .font(WQDesignSystem.Typography.largeTitle)
                         .foregroundColor(WQDesignSystem.Colors.primaryText)
+                        .accessibilityAddTraits(.isHeader)
                     
                     Text("Turn your daily activity into epic adventures")
                         .font(WQDesignSystem.Typography.body)
                         .foregroundColor(WQDesignSystem.Colors.secondaryText)
                         .multilineTextAlignment(.center)
+                        .accessibilityLabel(AccessibilityConstants.Onboarding.welcomeDescription)
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(AccessibilityConstants.Onboarding.welcomeTitle)
+                .accessibilityValue(AccessibilityConstants.Onboarding.welcomeDescription)
                 
                 VStack(spacing: WQDesignSystem.Spacing.sm) {
-                    FeatureRow(icon: "figure.walk", title: "Steps become travel", description: "Every step moves you forward on quests")
-                    FeatureRow(icon: "heart.fill", title: "Heart rate triggers combat", description: "High activity unlocks battle encounters")
-                    FeatureRow(icon: "trophy.fill", title: "Real rewards", description: "Earn XP, gold, and loot for activity")
+                    FeatureRow(
+                        icon: "figure.walk",
+                        title: "Steps become travel",
+                        description: "Every step moves you forward on quests"
+                    )
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(AccessibilityConstants.Tips.walkingMechanic)
+                    
+                    FeatureRow(
+                        icon: "heart.fill",
+                        title: "Heart rate triggers combat",
+                        description: "High activity unlocks battle encounters"
+                    )
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(AccessibilityConstants.Tips.heartRateMechanic)
+                    
+                    FeatureRow(
+                        icon: "trophy.fill",
+                        title: "Real rewards",
+                        description: "Earn XP, gold, and loot for activity"
+                    )
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(AccessibilityConstants.Tips.rewardMechanic)
                 }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(AccessibilityConstants.Tips.featureExplanation)
                 
                 Spacer(minLength: WQDesignSystem.Spacing.lg)
                 
                 WQButton("Get Started", icon: "arrow.right") {
                     onNext()
+                    AccessibilityHelpers.announce("Starting WristQuest onboarding")
                 }
+                .accessibleActionButton(
+                    actionName: AccessibilityConstants.Actions.getStarted,
+                    description: AccessibilityConstants.Actions.getStartedHint
+                )
                 .padding(.horizontal, WQDesignSystem.Spacing.md)
             }
             .padding(WQDesignSystem.Spacing.lg)
+        }
+        .onAppear {
+            AccessibilityHelpers.announce(AccessibilityConstants.Announcements.welcomeMessage)
         }
     }
 }
@@ -242,32 +283,56 @@ struct HealthPermissionStepView: View {
             Text("Health Permission")
                 .font(WQDesignSystem.Typography.title)
                 .foregroundColor(WQDesignSystem.Colors.primaryText)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityLabel(AccessibilityConstants.Onboarding.healthPermissionTitle)
             
             Text("To power your quests with real activity, Wrist Quest needs access to your health data.")
                 .font(WQDesignSystem.Typography.body)
                 .foregroundColor(WQDesignSystem.Colors.secondaryText)
                 .multilineTextAlignment(.center)
+                .accessibilityLabel(AccessibilityConstants.Onboarding.healthPermissionDescription)
             
             if status == .authorized {
                 VStack {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.largeTitle)
                         .foregroundColor(.green)
+                        .accessibilityLabel("Success checkmark")
+                        .accessibilityHidden(true)
                     Text("Health access granted!")
                         .foregroundColor(.green)
+                        .accessibilityLabel(AccessibilityConstants.Onboarding.healthPermissionGranted)
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(AccessibilityConstants.Onboarding.healthPermissionGranted)
+                .accessibilityAddTraits(.isStaticText)
                 
                 WQButton("Continue", icon: "arrow.right") {
                     onNext()
+                    AccessibilityHelpers.announce("Proceeding to character creation")
                 }
+                .accessibleActionButton(
+                    actionName: AccessibilityConstants.Navigation.continueButton,
+                    description: AccessibilityConstants.Actions.nextStepHint
+                )
             } else {
                 WQButton(isRequesting ? "Requesting..." : "Grant Health Access", icon: "heart.fill") {
                     onRequest()
                 }
                 .disabled(isRequesting)
+                .accessibleActionButton(
+                    actionName: AccessibilityConstants.Onboarding.healthPermissionButton,
+                    description: AccessibilityConstants.Onboarding.healthPermissionHint,
+                    isEnabled: !isRequesting
+                )
             }
         }
         .padding(WQDesignSystem.Spacing.lg)
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("VoiceOverStatusChanged"))) { _ in
+            if status == .authorized && AccessibilityHelpers.isVoiceOverRunning {
+                AccessibilityHelpers.announce(AccessibilityConstants.Announcements.healthPermissionGranted)
+            }
+        }
     }
 }
 
@@ -276,18 +341,49 @@ struct CharacterCreationStepView: View {
     @Binding var playerName: String
     let onNext: () -> Void
     
+    @State private var nameValidationResult: ValidationResult = .valid
+    
     var body: some View {
         ScrollView {
             VStack(spacing: WQDesignSystem.Spacing.lg) {
                 Text("Choose Your Hero")
                     .font(WQDesignSystem.Typography.title)
                     .foregroundColor(WQDesignSystem.Colors.primaryText)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityLabel(AccessibilityConstants.Onboarding.characterCreationTitle)
                 
-                TextField("Hero Name", text: $playerName)
+                VStack(alignment: .leading, spacing: WQDesignSystem.Spacing.sm) {
+                    Text("Hero Name:")
+                        .font(WQDesignSystem.Typography.headline)
+                        .foregroundColor(WQDesignSystem.Colors.primaryText)
+                        .accessibilityLabel(AccessibilityConstants.Onboarding.nameFieldLabel)
+                    
+                    ValidatedTextField(
+                        text: $playerName,
+                        placeholder: "Enter your hero's name",
+                        validator: { InputValidator.shared.validatePlayerName($0) }
+                    )
+                    .wqFormAccessible(
+                        field: WQFormField(
+                            label: AccessibilityConstants.Onboarding.nameFieldLabel,
+                            hint: AccessibilityConstants.Onboarding.nameFieldHint,
+                            isRequired: true
+                        ),
+                        validation: nameValidationResult
+                    )
+                    .onChange(of: playerName) { newValue in
+                        nameValidationResult = InputValidator.shared.validatePlayerName(newValue)
+                    }
+                    .onAppear {
+                        nameValidationResult = InputValidator.shared.validatePlayerName(playerName)
+                    }
+                }
                 
                 Text("Select your class:")
                     .font(WQDesignSystem.Typography.headline)
                     .foregroundColor(WQDesignSystem.Colors.primaryText)
+                    .accessibilityLabel(AccessibilityConstants.Onboarding.classSelectionLabel)
+                    .accessibilityHint(AccessibilityConstants.Onboarding.classSelectionHint)
                 
                 LazyVGrid(columns: [GridItem(.flexible())], spacing: WQDesignSystem.Spacing.sm) {
                     ForEach(HeroClass.allCases, id: \.self) { heroClass in
@@ -296,18 +392,50 @@ struct CharacterCreationStepView: View {
                             isSelected: selectedClass == heroClass
                         ) {
                             selectedClass = heroClass
+                            AccessibilityHelpers.announce("Selected \(heroClass.displayName)")
                         }
                     }
                 }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(AccessibilityConstants.Onboarding.classSelectionLabel)
                 
-                if selectedClass != nil && !playerName.isEmpty {
+                if canProceedWithCharacterCreation {
                     WQButton("Continue", icon: "arrow.right") {
                         onNext()
+                        if let selectedClass = selectedClass {
+                            AccessibilityHelpers.announce("Character created: \(playerName), \(selectedClass.displayName)")
+                        }
+                    }
+                    .accessibleActionButton(
+                        actionName: AccessibilityConstants.Navigation.continueButton,
+                        description: "Continue to tutorial quest"
+                    )
+                } else {
+                    VStack(spacing: WQDesignSystem.Spacing.xs) {
+                        WQButton("Continue", icon: "arrow.right") {
+                            // Disabled button
+                        }
+                        .disabled(true)
+                        .accessibleActionButton(
+                            actionName: AccessibilityConstants.Navigation.continueButton,
+                            description: "Complete character creation to continue",
+                            isEnabled: false
+                        )
+                        
+                        Text("Please enter a valid hero name and select a class")
+                            .font(WQDesignSystem.Typography.caption)
+                            .foregroundColor(WQDesignSystem.Colors.secondaryText)
+                            .multilineTextAlignment(.center)
+                            .accessibilityLabel("Validation message: Please enter a valid hero name and select a character class to continue")
                     }
                 }
             }
             .padding(WQDesignSystem.Spacing.md)
         }
+    }
+    
+    private var canProceedWithCharacterCreation: Bool {
+        return selectedClass != nil && nameValidationResult.isValid && !playerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
 
@@ -323,6 +451,7 @@ struct ClassSelectionCard: View {
                     Image(systemName: heroClass.iconName)
                         .font(.title2)
                         .foregroundColor(heroClass.color)
+                        .accessibilityHidden(true)
                     
                     Text(heroClass.displayName)
                         .font(WQDesignSystem.Typography.headline)
@@ -333,6 +462,7 @@ struct ClassSelectionCard: View {
                     if isSelected {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundColor(.green)
+                            .accessibilityLabel(AccessibilityConstants.CharacterClasses.selectedIndicator)
                     }
                 }
                 
@@ -342,6 +472,11 @@ struct ClassSelectionCard: View {
                     .multilineTextAlignment(.leading)
             }
         }
+        .accessibleCharacterClass(
+            className: heroClass.displayName,
+            isSelected: isSelected,
+            description: AccessibilityConstants.CharacterClasses.classDescription(for: heroClass.displayName)
+        )
         .onTapGesture {
             onTap()
         }
@@ -360,15 +495,23 @@ struct TutorialQuestStepView: View {
             Text("Your First Quest")
                 .font(WQDesignSystem.Typography.title)
                 .foregroundColor(WQDesignSystem.Colors.primaryText)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityLabel(AccessibilityConstants.Onboarding.tutorialQuestTitle)
             
             Text("Time to learn the basics! Your first quest awaits.")
                 .font(WQDesignSystem.Typography.body)
                 .foregroundColor(WQDesignSystem.Colors.secondaryText)
                 .multilineTextAlignment(.center)
+                .accessibilityLabel(AccessibilityConstants.Onboarding.tutorialQuestDescription)
             
             WQButton("Start Tutorial Quest", icon: "play.fill") {
                 onNext()
+                AccessibilityHelpers.announce("Starting tutorial quest")
             }
+            .accessibleActionButton(
+                actionName: AccessibilityConstants.Onboarding.startTutorialButton,
+                description: "Begin your first quest to learn the game mechanics"
+            )
         }
         .padding(WQDesignSystem.Spacing.lg)
     }
@@ -383,21 +526,34 @@ struct CompletionStepView: View {
                 .font(.largeTitle)
                 .foregroundColor(WQDesignSystem.Colors.accent)
                 .scaleEffect(1.5)
+                .accessibilityLabel("Crown icon representing completion")
+                .accessibilityHidden(true)
             
             Text("Ready to Adventure!")
                 .font(WQDesignSystem.Typography.title)
                 .foregroundColor(WQDesignSystem.Colors.primaryText)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityLabel(AccessibilityConstants.Onboarding.completionTitle)
             
             Text("Your hero is ready to begin their legendary journey.")
                 .font(WQDesignSystem.Typography.body)
                 .foregroundColor(WQDesignSystem.Colors.secondaryText)
                 .multilineTextAlignment(.center)
+                .accessibilityLabel(AccessibilityConstants.Onboarding.completionDescription)
             
             WQButton("Begin Adventure", icon: "arrow.right") {
                 onComplete()
+                AccessibilityHelpers.announce(AccessibilityConstants.Announcements.onboardingComplete)
             }
+            .accessibleActionButton(
+                actionName: AccessibilityConstants.Onboarding.beginAdventureButton,
+                description: "Complete onboarding and enter the main game"
+            )
         }
         .padding(WQDesignSystem.Spacing.lg)
+        .onAppear {
+            AccessibilityHelpers.announce("Onboarding complete! Ready to begin your adventure.")
+        }
     }
 }
 
@@ -412,6 +568,7 @@ struct FeatureRow: View {
                 .font(.title3)
                 .foregroundColor(WQDesignSystem.Colors.accent)
                 .frame(width: 24, height: 24)
+                .accessibilityHidden(true)
             
             VStack(alignment: .leading, spacing: WQDesignSystem.Spacing.xs) {
                 Text(title)
@@ -425,5 +582,7 @@ struct FeatureRow: View {
             
             Spacer()
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title): \(description)")
     }
 }
