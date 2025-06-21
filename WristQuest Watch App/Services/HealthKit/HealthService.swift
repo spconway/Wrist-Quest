@@ -147,12 +147,11 @@ class HealthService: HealthServiceProtocol {
             
             await updateAuthorizationStatus()
             
-            // Check if we actually got permission
+            // Check if we actually got permission - but don't throw error if denied
             let status = await checkAuthorizationStatus()
             if status == .denied {
-                let error = WQError.healthKit(.authorizationDenied)
-                handleError(error)
-                throw error
+                logger?.info("Health authorization was denied by user", category: .health)
+                // Don't throw error - this is a valid user choice
             }
         } catch let error as WQError {
             throw error

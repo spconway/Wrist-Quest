@@ -112,9 +112,10 @@ struct OnboardingView: View {
         case .welcome:
             return true
         case .healthPermission:
-            return healthPermissionStatus == .authorized
+            return true // Allow proceeding regardless of health permission status
         case .characterCreation:
-            return selectedClass != nil && !playerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let trimmedName = playerName.trimmingCharacters(in: .whitespacesAndNewlines)
+            return selectedClass != nil && trimmedName.count >= 1 && trimmedName.count <= 20
         case .tutorialQuest:
             return true
         case .complete:
@@ -147,9 +148,9 @@ struct OnboardingView: View {
                 try await healthService.requestAuthorization()
                 await checkHealthPermissionStatus()
             } catch {
-                await MainActor.run {
-                    self.showError("Failed to request health permissions: \(error.localizedDescription)")
-                }
+                // Don't show error for denied permissions - handle gracefully
+                print("Health permission request completed with result: \(error)")
+                await checkHealthPermissionStatus() // Check final status anyway
             }
             
             await MainActor.run {
@@ -342,6 +343,7 @@ struct CharacterCreationStepView: View {
     let onNext: () -> Void
     
     @State private var nameValidationResult: ValidationResult = .valid
+    @FocusState private var isTextFieldFocused: Bool
     
     var body: some View {
         ScrollView {
@@ -358,25 +360,14 @@ struct CharacterCreationStepView: View {
                         .foregroundColor(WQDesignSystem.Colors.primaryText)
                         .accessibilityLabel(AccessibilityConstants.Onboarding.nameFieldLabel)
                     
-                    ValidatedTextField(
-                        text: $playerName,
-                        placeholder: "Enter your hero's name",
-                        validator: { InputValidator.shared.validatePlayerName($0) }
-                    )
-                    .wqFormAccessible(
-                        field: WQFormField(
-                            label: AccessibilityConstants.Onboarding.nameFieldLabel,
-                            hint: AccessibilityConstants.Onboarding.nameFieldHint,
-                            isRequired: true
-                        ),
-                        validation: nameValidationResult
-                    )
-                    .onChange(of: playerName) { newValue in
-                        nameValidationResult = InputValidator.shared.validatePlayerName(newValue)
-                    }
-                    .onAppear {
-                        nameValidationResult = InputValidator.shared.validatePlayerName(playerName)
-                    }
+                    TextField("Enter your hero's name", text: $playerName)
+                        .focused($isTextFieldFocused)
+                        .onChange(of: playerName) { newValue in
+                            nameValidationResult = InputValidator.shared.validatePlayerName(newValue)
+                        }
+                        .onAppear {
+                            nameValidationResult = InputValidator.shared.validatePlayerName(playerName)
+                        }
                 }
                 
                 Text("Select your class:")
@@ -392,6 +383,7 @@ struct CharacterCreationStepView: View {
                             isSelected: selectedClass == heroClass
                         ) {
                             selectedClass = heroClass
+                            isTextFieldFocused = false // Dismiss keyboard when selecting class
                             AccessibilityHelpers.announce("Selected \(heroClass.displayName)")
                         }
                     }
@@ -432,10 +424,16 @@ struct CharacterCreationStepView: View {
             }
             .padding(WQDesignSystem.Spacing.md)
         }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            // Dismiss keyboard when tapping background
+            isTextFieldFocused = false
+        }
     }
     
     private var canProceedWithCharacterCreation: Bool {
-        return selectedClass != nil && nameValidationResult.isValid && !playerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let trimmedName = playerName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return selectedClass != nil && trimmedName.count >= 1 && trimmedName.count <= 20
     }
 }
 

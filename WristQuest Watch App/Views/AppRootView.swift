@@ -108,6 +108,8 @@ struct MainContentView: View {
             switch gameViewModel.gameState {
             case .mainMenu:
                 MainMenuView()
+            case .mysticalTransition:
+                MysticalTransitionView()
             case .activeQuest:
                 if let player = gameViewModel.currentPlayer {
                     ActiveQuestView(playerViewModel: PlayerViewModel(player: player))
@@ -116,6 +118,9 @@ struct MainContentView: View {
                 }
             case .encounter(let encounter):
                 EncounterView(encounter: encounter)
+            case .onboarding:
+                // This should be handled by fullScreenCover, but fallback to MainMenu
+                MainMenuView()
             default:
                 MainMenuView()
             }
@@ -202,6 +207,43 @@ struct LevelUpRewardView: View {
 struct CharacterCreationView: View {
     var body: some View {
         WQLoadingView("Setting up character...")
+    }
+}
+
+struct MysticalTransitionView: View {
+    @EnvironmentObject var gameViewModel: GameViewModel
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            if gameViewModel.isPlayingIntroSequence {
+                VStack(spacing: 16) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 40))
+                        .foregroundColor(.yellow)
+                        .scaleEffect(gameViewModel.heroAscensionProgress + 0.5)
+                        .rotationEffect(.degrees(gameViewModel.heroAscensionProgress * 360))
+                    
+                    Text("Welcome to Wrist Quest!")
+                        .font(.title2)
+                        .multilineTextAlignment(.center)
+                    
+                    if !gameViewModel.realmWelcomeMessage.isEmpty {
+                        Text(gameViewModel.realmWelcomeMessage)
+                            .font(.body)
+                            .multilineTextAlignment(.center)
+                            .opacity(gameViewModel.heroAscensionProgress)
+                    }
+                    
+                    ProgressView(value: gameViewModel.heroAscensionProgress)
+                        .progressViewStyle(LinearProgressViewStyle())
+                }
+                .padding()
+            } else {
+                WQLoadingView("Entering the realm...")
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.opacity(0.9))
     }
 }
 

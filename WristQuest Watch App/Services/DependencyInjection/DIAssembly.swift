@@ -16,44 +16,40 @@ class AppDIAssembly: DIAssemblyProtocol {
     }
     
     private func configureServices(_ container: DIContainerProtocol) {
-        // Register lightweight services first
+        print("🔧 DIAssembly: Starting SIMPLE service registration to avoid circular dependencies")
+        
+        // Register all services with simple factories - NO INTERNAL RESOLUTION
         container.register(LoggingServiceProtocol.self, scope: .singleton) {
-            LoggingService()
+            print("🔧 DIAssembly: Creating LoggingService")
+            return LoggingService()
         }
         
-        container.register(AnalyticsServiceProtocol.self, scope: .singleton) { container in
-            let logger: LoggingServiceProtocol = container.resolve(LoggingServiceProtocol.self)
-            return AnalyticsService(logger: logger)
+        container.register(AnalyticsServiceProtocol.self, scope: .singleton) {
+            print("🔧 DIAssembly: Creating AnalyticsService")
+            return AnalyticsService(logger: LoggingService()) // Create directly to avoid circular dependency
         }
         
-        // Register heavy services with explicit dependency injection (no lazy initialization)
-        print("🔧 DIAssembly: Registering heavy services with explicit dependency injection")
-        
-        container.register(HealthServiceProtocol.self, scope: .singleton) { container in
-            print("🔧 DIAssembly: Creating HealthService with explicit dependencies")
-            let logger: LoggingServiceProtocol = container.resolve(LoggingServiceProtocol.self)
-            let analytics: AnalyticsServiceProtocol = container.resolve(AnalyticsServiceProtocol.self)
-            return HealthService(logger: logger, analytics: analytics)
+        container.register(HealthServiceProtocol.self, scope: .singleton) {
+            print("🔧 DIAssembly: Creating HealthService")
+            return HealthService() // Use convenience init that creates with nil dependencies
         }
         
-        container.register(PersistenceServiceProtocol.self, scope: .singleton) { container in
-            print("🔧 DIAssembly: Creating PersistenceService with explicit dependencies")
-            let logger: LoggingServiceProtocol = container.resolve(LoggingServiceProtocol.self)
-            let analytics: AnalyticsServiceProtocol = container.resolve(AnalyticsServiceProtocol.self)
-            return PersistenceService(logger: logger, analytics: analytics)
+        container.register(PersistenceServiceProtocol.self, scope: .singleton) {
+            print("🔧 DIAssembly: Creating PersistenceService")
+            return PersistenceService() // Use convenience init that creates with nil dependencies
         }
         
-        container.register(TutorialServiceProtocol.self, scope: .singleton) { container in
-            print("🔧 DIAssembly: Creating TutorialService with explicit dependencies")
-            let logger: LoggingServiceProtocol = container.resolve(LoggingServiceProtocol.self)
-            return TutorialService(logger: logger)
+        container.register(TutorialServiceProtocol.self, scope: .singleton) {
+            print("🔧 DIAssembly: Creating TutorialService")
+            return TutorialService(logger: LoggingService()) // Create directly to avoid circular dependency
         }
         
-        container.register(QuestGenerationServiceProtocol.self, scope: .singleton) { container in
-            print("🔧 DIAssembly: Creating QuestGenerationService with explicit dependencies")
-            let logger: LoggingServiceProtocol = container.resolve(LoggingServiceProtocol.self)
-            return QuestGenerationService(logger: logger)
+        container.register(QuestGenerationServiceProtocol.self, scope: .singleton) {
+            print("🔧 DIAssembly: Creating QuestGenerationService")
+            return QuestGenerationService(logger: LoggingService()) // Create directly to avoid circular dependency
         }
+        
+        print("🔧 DIAssembly: All services registered with simple factories - NO CIRCULAR DEPENDENCIES")
     }
     
     private func registerHeavyServices(_ container: DIContainerProtocol) {
