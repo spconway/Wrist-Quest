@@ -1,197 +1,198 @@
 import SwiftUI
 
 enum OnboardingStep: String, CaseIterable {
-    case welcome
-    case healthPermission
-    case characterCreation
-    case tutorialQuest
-    case complete
-    
-    var title: String {
-        switch self {
-        case .welcome:
-            return "Welcome to Wrist Quest"
-        case .healthPermission:
-            return "Health Integration"
-        case .characterCreation:
-            return "Choose Your Hero"
-        case .tutorialQuest:
-            return "Your First Quest"
-        case .complete:
-            return "Ready to Adventure"
-        }
-    }
-    
-    var description: String {
-        switch self {
-        case .welcome:
-            return "Turn your daily activity into epic adventures"
-        case .healthPermission:
-            return "Grant health access to power your quests"
-        case .characterCreation:
-            return "Select your character class and abilities"
-        case .tutorialQuest:
-            return "Learn the basics with a guided quest"
-        case .complete:
-            return "Your journey begins now"
-        }
-    }
+	case welcome
+	case healthPermission
+	case nameEntry
+	case classSelection
+	case tutorialQuest
+	case complete
+	
+	var title: String {
+		switch self {
+			case .welcome:
+				return "Welcome to Wrist Quest"
+			case .healthPermission:
+				return "Health Integration"
+			case .nameEntry:
+				return "Name Your Hero"
+			case .classSelection:
+				return "Choose Your Class"
+			case .tutorialQuest:
+				return "Your First Quest"
+			case .complete:
+				return "Ready to Adventure"
+		}
+	}
+	
+	var description: String {
+		switch self {
+			case .welcome:
+				return "Turn your daily activity into epic adventures"
+			case .healthPermission:
+				return "Grant health access to power your quests"
+			case .nameEntry:
+				return "Enter a name for your hero"
+			case .classSelection:
+				return "Select your character class"
+			case .tutorialQuest:
+				return "Learn the basics with a guided quest"
+			case .complete:
+				return "Your journey begins now"
+		}
+	}
 }
 
 struct OnboardingView: View {
-    @EnvironmentObject private var gameViewModel: GameViewModel
-    @EnvironmentObject private var navigationCoordinator: NavigationCoordinator
-    @State private var currentStep: OnboardingStep = .welcome
-    @State private var selectedClass: HeroClass?
-    @State private var playerName = ""
-    @State private var healthPermissionStatus: HealthAuthorizationStatus = .notDetermined
-    @State private var isRequestingPermission = false
-    @State private var showingError = false
-    @State private var errorMessage = ""
-    
-    private let healthService: HealthServiceProtocol = HealthService()
-    
-    var body: some View {
-        ZStack {
-            WQDesignSystem.Colors.primaryBackground
-                .ignoresSafeArea(.all)
-            
-            TabView(selection: .constant(currentStep)) {
-                ForEach(OnboardingStep.allCases, id: \.self) { step in
-                    onboardingStepView(for: step)
-                        .tag(step)
-                }
-            }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .animation(WQDesignSystem.Animation.medium, value: currentStep)
-        }
-        .alert("Error", isPresented: $showingError) {
-            Button("OK") {
-                dismissError()
-            }
-        } message: {
-            Text(errorMessage)
-        }
-        .onAppear {
-            checkHealthPermissionStatus()
-        }
-        .onReceive(gameViewModel.$gameState) { gameState in
-            if case .mainMenu = gameState {
-                navigationCoordinator.dismissFullScreenCover()
-            }
-        }
-    }
-    
-    @ViewBuilder
-    private func onboardingStepView(for step: OnboardingStep) -> some View {
-        switch step {
-        case .welcome:
-            WelcomeStepView(onNext: nextStep)
-        case .healthPermission:
-            HealthPermissionStepView(
-                status: healthPermissionStatus,
-                isRequesting: isRequestingPermission,
-                onRequest: requestHealthPermission,
-                onNext: nextStep
-            )
-        case .characterCreation:
-            CharacterCreationStepView(
-                selectedClass: $selectedClass,
-                playerName: $playerName,
-                onNext: nextStep
-            )
-        case .tutorialQuest:
-            TutorialQuestStepView(onNext: nextStep)
-        case .complete:
-            CompletionStepView(onComplete: completeOnboarding)
-        }
-    }
-    
-    var canProceed: Bool {
-        switch currentStep {
-        case .welcome:
-            return true
-        case .healthPermission:
-            return true // Allow proceeding regardless of health permission status
-        case .characterCreation:
-            let trimmedName = playerName.trimmingCharacters(in: .whitespacesAndNewlines)
-            return selectedClass != nil && trimmedName.count >= 1 && trimmedName.count <= 20
-        case .tutorialQuest:
-            return true
-        case .complete:
-            return true
-        }
-    }
-    
-    func nextStep() {
-        guard canProceed else { return }
-        
-        switch currentStep {
-        case .welcome:
-            currentStep = .healthPermission
-        case .healthPermission:
-            currentStep = .characterCreation
-        case .characterCreation:
-            currentStep = .tutorialQuest
-        case .tutorialQuest:
-            currentStep = .complete
-        case .complete:
-            completeOnboarding()
-        }
-    }
-    
-    func requestHealthPermission() {
-        isRequestingPermission = true
-        
-        Task {
-            do {
-                try await healthService.requestAuthorization()
-                await checkHealthPermissionStatus()
-            } catch {
-                // Don't show error for denied permissions - handle gracefully
-                print("Health permission request completed with result: \(error)")
-                await checkHealthPermissionStatus() // Check final status anyway
-            }
-            
-            await MainActor.run {
-                self.isRequestingPermission = false
-            }
-        }
-    }
-    
-    private func checkHealthPermissionStatus() {
-        Task {
-            let status = await healthService.checkAuthorizationStatus()
-            await MainActor.run {
-                self.healthPermissionStatus = status
-            }
-        }
-    }
-    
-    private func completeOnboarding() {
-        guard let selectedClass = selectedClass else { return }
-        
-        do {
-            let player = try Player(
-                name: playerName.trimmingCharacters(in: .whitespacesAndNewlines),
-                activeClass: selectedClass
-            )
-            
-            gameViewModel.startGame(with: player)
-        } catch {
-            showError("Failed to create character: \(error.localizedDescription)")
-        }
-    }
-    
-    private func showError(_ message: String) {
-        errorMessage = message
-        showingError = true
-    }
-    
-    func dismissError() {
-        showingError = false
-        errorMessage = ""
-    }
+	@EnvironmentObject private var gameViewModel: GameViewModel
+	@EnvironmentObject private var navigationCoordinator: NavigationCoordinator
+	@State private var currentStep: OnboardingStep = .welcome
+	@State private var selectedClass: HeroClass?
+	@State private var playerName = ""
+	@State private var healthPermissionStatus: HealthAuthorizationStatus = .notDetermined
+	@State private var isRequestingPermission = false
+	@State private var showingError = false
+	@State private var errorMessage = ""
+	
+	private let healthService: HealthServiceProtocol = HealthService()
+	
+	var body: some View {
+		ZStack {
+			WQDesignSystem.Colors.primaryBackground
+				.ignoresSafeArea(.all)
+			
+			TabView(selection: .constant(currentStep)) {
+				ForEach(OnboardingStep.allCases, id: \.self) { step in
+					onboardingStepView(for: step)
+						.tag(step)
+				}
+			}
+			.tabViewStyle(.page(indexDisplayMode: .never))
+			.animation(WQDesignSystem.Animation.medium, value: currentStep)
+		}
+		.alert("Error", isPresented: $showingError) {
+			Button("OK") {
+				dismissError()
+			}
+		} message: {
+			Text(errorMessage)
+		}
+		.onAppear {
+			Task {
+				await checkHealthPermissionStatus()
+			}
+		}
+		.onReceive(gameViewModel.$gameState) { gameState in
+			if case .mainMenu = gameState {
+				navigationCoordinator.dismissFullScreenCover()
+			}
+		}
+	}
+	
+	@ViewBuilder
+	private func onboardingStepView(for step: OnboardingStep) -> some View {
+		switch step {
+			case .welcome:
+				WelcomeStepView(onNext: nextStep)
+			case .healthPermission:
+				HealthPermissionStepView(
+					status: healthPermissionStatus,
+					isRequesting: isRequestingPermission,
+					onRequest: requestHealthPermission,
+					onNext: nextStep
+				)
+			case .nameEntry:
+				NameEntryStepView(playerName: $playerName) {
+					currentStep = .classSelection
+				}
+			case .classSelection:
+				ClassSelectionStepView(
+					selectedClass: $selectedClass,
+					playerName: $playerName,
+					onNext: nextStep
+				)
+			case .tutorialQuest:
+				TutorialQuestStepView(onNext: nextStep)
+			case .complete:
+				CompletionStepView(onComplete: completeOnboarding)
+		}
+	}
+	
+	var canProceed: Bool {
+		switch currentStep {
+			case .welcome, .healthPermission, .nameEntry, .tutorialQuest, .complete:
+				return true
+			case .classSelection:
+				let trimmedName = playerName.trimmingCharacters(in: .whitespacesAndNewlines)
+				return selectedClass != nil && trimmedName.count >= 1 && trimmedName.count <= 20
+		}
+	}
+	
+	func nextStep() {
+		guard canProceed else { return }
+		
+		switch currentStep {
+			case .welcome:
+				currentStep = .healthPermission
+			case .healthPermission:
+				currentStep = .nameEntry
+			case .nameEntry:
+				currentStep = .classSelection
+			case .classSelection:
+				currentStep = .tutorialQuest
+			case .tutorialQuest:
+				currentStep = .complete
+			case .complete:
+				completeOnboarding()
+		}
+	}
+	
+	func requestHealthPermission() {
+		isRequestingPermission = true
+		
+		Task {
+			do {
+				try await healthService.requestAuthorization()
+				await checkHealthPermissionStatus()
+			} catch {
+				print("Health permission request completed with result: \(error)")
+				await checkHealthPermissionStatus()
+			}
+			
+			isRequestingPermission = false
+		}
+	}
+	
+	@MainActor
+	private func checkHealthPermissionStatus() async {
+		let status = await healthService.checkAuthorizationStatus()
+		self.healthPermissionStatus = status
+	}
+	
+	private func completeOnboarding() {
+		guard let selectedClass = selectedClass else { return }
+		
+		do {
+			let player = try Player(
+				name: playerName.trimmingCharacters(in: .whitespacesAndNewlines),
+				activeClass: selectedClass
+			)
+			
+			gameViewModel.startGame(with: player)
+		} catch {
+			showError("Failed to create character: \(error.localizedDescription)")
+		}
+	}
+	
+	private func showError(_ message: String) {
+		errorMessage = message
+		showingError = true
+	}
+	
+	func dismissError() {
+		showingError = false
+		errorMessage = ""
+	}
 }
 
 // MARK: - Individual Step Views
@@ -337,6 +338,25 @@ struct HealthPermissionStepView: View {
     }
 }
 
+struct FocusTestView: View {
+	@State private var name = ""
+	@FocusState private var focused: Bool
+	
+	var body: some View {
+		VStack {
+			TextField("Name", text: $name)
+				.focused($focused)
+				.padding()
+				.border(Color.gray)
+				.onAppear {
+					DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+						focused = true
+					}
+				}
+		}
+	}
+}
+
 struct CharacterCreationStepView: View {
     @Binding var selectedClass: HeroClass?
     @Binding var playerName: String
@@ -362,10 +382,17 @@ struct CharacterCreationStepView: View {
                     
                     TextField("Enter your hero's name", text: $playerName)
                         .focused($isTextFieldFocused)
+												.onTapGesture {
+													print("Tapped text field")
+												}
                         .onChange(of: playerName) { newValue in
+													print("Focus changed: \(newValue)")
                             nameValidationResult = InputValidator.shared.validatePlayerName(newValue)
                         }
                         .onAppear {
+													DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+														isTextFieldFocused = true
+													}
                             nameValidationResult = InputValidator.shared.validatePlayerName(playerName)
                         }
                 }
@@ -425,16 +452,93 @@ struct CharacterCreationStepView: View {
             .padding(WQDesignSystem.Spacing.md)
         }
         .contentShape(Rectangle())
-        .onTapGesture {
-            // Dismiss keyboard when tapping background
-            isTextFieldFocused = false
-        }
+//        .onTapGesture {
+//            // Dismiss keyboard when tapping background
+//            isTextFieldFocused = false
+//        }
+				.simultaneousGesture(TapGesture().onEnded {
+					isTextFieldFocused = false
+				})
+
     }
     
     private var canProceedWithCharacterCreation: Bool {
         let trimmedName = playerName.trimmingCharacters(in: .whitespacesAndNewlines)
         return selectedClass != nil && trimmedName.count >= 1 && trimmedName.count <= 20
     }
+}
+
+struct NameEntryStepView: View {
+	@Binding var playerName: String
+	let onNext: () -> Void
+	
+	@State private var nameValidationResult: ValidationResult = .valid
+	
+	var body: some View {
+		VStack(spacing: 12) {
+			Text("Hero Name")
+				.font(WQDesignSystem.Typography.title)
+				.foregroundColor(WQDesignSystem.Colors.primaryText)
+			
+			TextField("Enter your hero's name", text: $playerName)
+				.submitLabel(.done)
+				.onChange(of: playerName) { newValue in
+					nameValidationResult = InputValidator.shared.validatePlayerName(newValue)
+				}
+			
+			if nameValidationResult != .valid {
+				Text("Please enter a valid name")
+					.font(WQDesignSystem.Typography.caption)
+					.foregroundColor(.red)
+			}
+			
+			WQButton("Next", icon: "arrow.right") {
+				onNext()
+			}
+			.disabled(!canProceed)
+		}
+		.padding()
+	}
+	
+	private var canProceed: Bool {
+		let trimmed = playerName.trimmingCharacters(in: .whitespacesAndNewlines)
+		return trimmed.count >= 1 && trimmed.count <= 20
+	}
+}
+
+struct ClassSelectionStepView: View {
+	@Binding var selectedClass: HeroClass?
+	@Binding var playerName: String
+	let onNext: () -> Void
+	
+	var body: some View {
+		VStack(spacing: 12) {
+			Text("Select Class")
+				.font(WQDesignSystem.Typography.title)
+				.foregroundColor(WQDesignSystem.Colors.primaryText)
+			
+			LazyVGrid(columns: [GridItem(.flexible())], spacing: 8) {
+				ForEach(HeroClass.allCases, id: \.self) { heroClass in
+					ClassSelectionCard(
+						heroClass: heroClass,
+						isSelected: selectedClass == heroClass
+					) {
+						selectedClass = heroClass
+						AccessibilityHelpers.announce("Selected \(heroClass.displayName)")
+					}
+				}
+			}
+			
+			WQButton("Continue", icon: "arrow.right") {
+				onNext()
+				if let selectedClass = selectedClass {
+					AccessibilityHelpers.announce("Character created: \(playerName), \(selectedClass.displayName)")
+				}
+			}
+			.disabled(selectedClass == nil)
+		}
+		.padding()
+	}
 }
 
 struct ClassSelectionCard: View {
@@ -583,4 +687,25 @@ struct FeatureRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title): \(description)")
     }
+}
+
+struct CharacterCreationStepView_Previews: PreviewProvider {
+	struct PreviewWrapper: View {
+		@State private var selectedClass: HeroClass? = nil
+		@State private var playerName: String = ""
+		
+		var body: some View {
+			CharacterCreationStepView(
+				selectedClass: $selectedClass,
+				playerName: $playerName,
+				onNext: {
+					print("Continue tapped in preview")
+				}
+			)
+		}
+	}
+	
+	static var previews: some View {
+		PreviewWrapper()
+	}
 }
