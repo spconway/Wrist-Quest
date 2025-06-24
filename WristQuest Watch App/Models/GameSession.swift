@@ -20,11 +20,19 @@ struct GameSession: Codable, Identifiable {
     let startTime: Date
     var endTime: Date?
     let sessionType: GameSessionType
-    
+
     init(sessionType: GameSessionType) {
         self.id = UUID()
         self.startTime = Date()
         self.endTime = nil
+        self.sessionType = sessionType
+    }
+
+    /// Initializer for loading existing sessions from persistence
+    init(id: UUID, startTime: Date, endTime: Date?, sessionType: GameSessionType) {
+        self.id = id
+        self.startTime = startTime
+        self.endTime = endTime
         self.sessionType = sessionType
     }
     
