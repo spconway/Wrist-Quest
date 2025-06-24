@@ -771,14 +771,18 @@ actor PersistenceService: PersistenceServiceProtocol {
             
             return entities.compactMap { entity in
                 guard let sessionTypeRaw = entity.sessionType,
-                      let sessionType = GameSessionType(rawValue: sessionTypeRaw) else {
+                      let sessionType = GameSessionType(rawValue: sessionTypeRaw),
+                      let id = entity.id,
+                      let startTime = entity.startTime else {
                     return nil
                 }
-                
-                var session = GameSession(sessionType: sessionType)
-                // We need to manually set the properties since we can't modify the initializer
-                // This is a limitation of the current GameSession model
-                return session
+
+                return GameSession(
+                    id: id,
+                    startTime: startTime,
+                    endTime: entity.endTime,
+                    sessionType: sessionType
+                )
             }
         }
     }
